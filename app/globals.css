@@ -1,0 +1,432 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   DESIGN TOKENS — réso M, refined
+   ============================================================ */
+:root {
+  /* surfaces */
+  --bg: 220 25% 98%;
+  --surface: 220 18% 96%;
+  --elev: 0 0% 100%;
+  --elev-2: 0 0% 100%;
+  --border: 220 14% 90%;
+  --border-strong: 220 13% 82%;
+  --shadow: 222 40% 12%;
+
+  /* text */
+  --fg: 222 24% 11%;
+  --fg-soft: 222 18% 18%;
+  --muted: 220 10% 38%;
+  --subtle: 220 12% 62%;
+  --disabled: 220 12% 78%;
+
+  /* brand */
+  --accent: 332 88% 46%;
+  --accent-2: 332 92% 56%;
+  --accent-fg: 0 0% 100%;
+  --accent-soft: 332 88% 96%;
+
+  /* semantic */
+  --success: 152 64% 38%;
+  --success-soft: 152 60% 94%;
+  --warning: 38 92% 50%;
+  --warning-soft: 38 92% 94%;
+  --danger: 0 78% 52%;
+  --danger-soft: 0 78% 96%;
+  --info: 213 90% 55%;
+  --info-soft: 213 90% 95%;
+
+  /* typography */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial", sans-serif;
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  /* radii — explicit, semantic */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-2xl: 22px;
+  --r-3xl: 28px;
+  --r-full: 9999px;
+
+  /* elevation scale (consistent across the app) */
+  --shadow-1: 0 1px 2px hsl(var(--shadow) / 0.04), 0 1px 1px hsl(var(--shadow) / 0.05);
+  --shadow-2: 0 2px 4px hsl(var(--shadow) / 0.05), 0 2px 8px hsl(var(--shadow) / 0.06);
+  --shadow-3: 0 4px 8px hsl(var(--shadow) / 0.06), 0 8px 16px hsl(var(--shadow) / 0.08);
+  --shadow-4: 0 8px 16px hsl(var(--shadow) / 0.08), 0 16px 32px hsl(var(--shadow) / 0.10);
+  --shadow-5: 0 16px 32px hsl(var(--shadow) / 0.12), 0 24px 48px hsl(var(--shadow) / 0.14);
+  --shadow-glow: 0 0 0 1px hsl(var(--accent) / 0.20), 0 4px 16px hsl(var(--accent) / 0.18);
+
+  /* motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 120ms;
+  --t-base: 220ms;
+  --t-slow: 380ms;
+}
+
+:root[data-theme="dark"] {
+  --bg: 222 26% 6%;
+  --surface: 222 22% 9%;
+  --elev: 222 20% 11%;
+  --elev-2: 222 18% 14%;
+  --border: 222 14% 18%;
+  --border-strong: 222 12% 24%;
+  --shadow: 0 0% 0%;
+  --fg: 0 0% 98%;
+  --fg-soft: 220 10% 92%;
+  --muted: 220 12% 65%;
+  --subtle: 220 10% 45%;
+  --disabled: 220 12% 30%;
+  --accent: 332 92% 60%;
+  --accent-2: 332 96% 70%;
+  --accent-soft: 332 60% 16%;
+  --success-soft: 152 40% 14%;
+  --warning-soft: 38 60% 14%;
+  --danger-soft: 0 50% 16%;
+  --info-soft: 213 50% 16%;
+}
+
+* { border-color: hsl(var(--border)); }
+
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: hsl(var(--bg));
+  color: hsl(var(--fg));
+  font-feature-settings: "cv11", "ss01", "ss03", "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.005em;
+}
+
+/* ============================================================
+   TYPOGRAPHY UTILITIES
+   ============================================================ */
+.text-display {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+}
+.text-title {
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+.text-headline {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+}
+.text-body {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+.text-caption {
+  font-size: 11.5px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: hsl(var(--muted));
+}
+.text-overline {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted));
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+.numeric { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* ============================================================
+   ELEVATION HELPERS
+   ============================================================ */
+.elev-1 { box-shadow: var(--shadow-1); }
+.elev-2 { box-shadow: var(--shadow-2); }
+.elev-3 { box-shadow: var(--shadow-3); }
+.elev-4 { box-shadow: var(--shadow-4); }
+.elev-5 { box-shadow: var(--shadow-5); }
+.elev-glow { box-shadow: var(--shadow-glow); }
+
+/* ============================================================
+   GLASS PANEL (signature surface)
+   ============================================================ */
+.glass {
+  background: hsl(var(--elev) / 0.78);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid hsl(var(--border));
+  box-shadow: var(--shadow-3);
+}
+.glass-strong {
+  background: hsl(var(--elev) / 0.92);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  border: 1px solid hsl(var(--border));
+  box-shadow: var(--shadow-4);
+}
+
+/* ============================================================
+   SKELETONS
+   ============================================================ */
+.skeleton {
+  background: linear-gradient(90deg,
+    hsl(var(--surface)) 0%,
+    hsl(var(--border)) 50%,
+    hsl(var(--surface)) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: var(--r-md);
+}
+
+/* ============================================================
+   INTERACTION
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid hsl(var(--accent));
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.btn-press { transition: transform var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.btn-press:active { transform: scale(0.97); }
+
+/* Ripple: subtle dilation feedback on click */
+.ripple {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--rx, 50%) var(--ry, 50%),
+    hsl(var(--accent) / 0.25) 0%, transparent 60%);
+  opacity: 0;
+  transform: scale(0.4);
+  pointer-events: none;
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-base) var(--ease);
+  z-index: 0;
+}
+.ripple:active::after {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0ms, transform 0ms;
+}
+
+/* Magnetic hover lift (subtle) */
+.magnetic {
+  transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+.magnetic:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* Live heartbeat — barely-there pulse */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: 0.85; }
+}
+.heartbeat { animation: heartbeat 2.4s var(--ease) infinite; }
+
+/* Favorite stop arrival particle dots */
+.fav-particle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  pointer-events: none;
+  margin-left: -3.5px;
+  margin-top: -3.5px;
+  opacity: 0;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+  animation: fav-fly 1.5s var(--ease) var(--delay) forwards;
+  z-index: 5;
+}
+@keyframes fav-fly {
+  0%   { transform: translate(0,0) scale(0.4); opacity: 0; }
+  10%  { transform: translate(0,0) scale(1.2); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0.2); opacity: 0; }
+}
+
+/* gentle hover lift for cards */
+.lift {
+  transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+.lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-3);
+}
+
+/* ============================================================
+   MAPLIBRE OVERRIDES (refined)
+   ============================================================ */
+.maplibregl-ctrl-attrib {
+  font-size: 10px !important;
+  opacity: 0.55;
+  background: hsl(var(--elev) / 0.7) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-radius: var(--r-sm);
+}
+.maplibregl-ctrl-bottom-right { margin-bottom: 10px !important; margin-right: 10px !important; }
+.maplibregl-ctrl-group {
+  border-radius: var(--r-xl) !important;
+  box-shadow: var(--shadow-3) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  overflow: hidden;
+  background: hsl(var(--elev)) !important;
+}
+.maplibregl-ctrl-group button {
+  width: 36px !important;
+  height: 36px !important;
+  background: transparent !important;
+}
+.maplibregl-ctrl-group button:hover { background: hsl(var(--surface)) !important; }
+.maplibregl-popup-content {
+  border-radius: var(--r-xl) !important;
+  box-shadow: var(--shadow-4) !important;
+  border: 1px solid hsl(var(--border));
+  padding: 12px 14px !important;
+  background: hsl(var(--elev)) !important;
+  color: hsl(var(--fg)) !important;
+}
+.maplibregl-popup-close-button {
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+  color: hsl(var(--muted)) !important;
+}
+.maplibregl-popup-tip { display: none !important; }
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@keyframes pulse-ring {
+  0% { transform: scale(0.7); opacity: 0.6; }
+  80%, 100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--accent) / 0); }
+  50% { box-shadow: 0 0 0 6px hsl(var(--accent) / 0.15); }
+}
+
+.vehicle-pulse { position: relative; }
+.vehicle-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  opacity: 0.30;
+  animation: pulse-ring 1.9s ease-out infinite;
+  pointer-events: none;
+}
+
+/* stagger helper (use --i: 0,1,2... on items) */
+.stagger > * {
+  opacity: 0;
+  animation: fade-up var(--t-slow) var(--ease) forwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+/* ============================================================
+   MOBILE BOTTOM-SHEET
+   ============================================================ */
+.mobile-sheet {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--elev) / 0.92);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-top-left-radius: var(--r-3xl);
+  border-top-right-radius: var(--r-3xl);
+  box-shadow: var(--shadow-4);
+  border: 1px solid hsl(var(--border));
+  border-bottom: 0;
+  max-height: 70vh;
+  transform: translateY(calc(100% - 110px));
+  transition: transform var(--t-slow) var(--ease);
+}
+.mobile-sheet[data-open="true"] { transform: translateY(0); }
+.mobile-sheet-handle {
+  width: 40px; height: 4px;
+  background: hsl(var(--border-strong));
+  border-radius: var(--r-full);
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   SCROLLBAR (refined)
+   ============================================================ */
+.scroll-area::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-area::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong));
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.scroll-area::-webkit-scrollbar-thumb:hover { background: hsl(var(--subtle)); background-clip: padding-box; }
+.scroll-area::-webkit-scrollbar-track { background: transparent; }
+
+/* ============================================================
+   KBD STYLE
+   ============================================================ */
+kbd, .kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  font-size: 10.5px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--border-strong));
+  color: hsl(var(--muted));
+  line-height: 1;
+  min-width: 18px;
+  justify-content: center;
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

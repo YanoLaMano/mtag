@@ -1,0 +1,14 @@
+{
+  "name": "M temps réel — Tram & Bus Grenoble",
+  "short_name": "M temps réel",
+  "description": "Carte temps réel des trams et bus du réseau M de la métropole grenobloise",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#dc1271",
+  "lang": "fr",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "16x16 32x32", "type": "image/x-icon" }
+  ]
+}

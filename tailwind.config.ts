@@ -1,0 +1,67 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        bg: "hsl(var(--bg) / <alpha-value>)",
+        surface: "hsl(var(--surface) / <alpha-value>)",
+        elev: "hsl(var(--elev) / <alpha-value>)",
+        "elev-2": "hsl(var(--elev-2) / <alpha-value>)",
+        border: "hsl(var(--border) / <alpha-value>)",
+        "border-strong": "hsl(var(--border-strong) / <alpha-value>)",
+        fg: "hsl(var(--fg) / <alpha-value>)",
+        "fg-soft": "hsl(var(--fg-soft) / <alpha-value>)",
+        muted: "hsl(var(--muted) / <alpha-value>)",
+        subtle: "hsl(var(--subtle) / <alpha-value>)",
+        disabled: "hsl(var(--disabled) / <alpha-value>)",
+        accent: "hsl(var(--accent) / <alpha-value>)",
+        "accent-2": "hsl(var(--accent-2) / <alpha-value>)",
+        "accent-fg": "hsl(var(--accent-fg) / <alpha-value>)",
+        "accent-soft": "hsl(var(--accent-soft) / <alpha-value>)",
+        success: "hsl(var(--success) / <alpha-value>)",
+        "success-soft": "hsl(var(--success-soft) / <alpha-value>)",
+        warning: "hsl(var(--warning) / <alpha-value>)",
+        "warning-soft": "hsl(var(--warning-soft) / <alpha-value>)",
+        danger: "hsl(var(--danger) / <alpha-value>)",
+        "danger-soft": "hsl(var(--danger-soft) / <alpha-value>)",
+        info: "hsl(var(--info) / <alpha-value>)",
+        "info-soft": "hsl(var(--info-soft) / <alpha-value>)",
+      },
+      borderRadius: {
+        xs: "var(--r-xs)",
+        sm: "var(--r-sm)",
+        DEFAULT: "var(--r-md)",
+        md: "var(--r-md)",
+        lg: "var(--r-lg)",
+        xl: "var(--r-xl)",
+        "2xl": "var(--r-2xl)",
+        "3xl": "var(--r-3xl)",
+      },
+      boxShadow: {
+        soft: "var(--shadow-2)",
+        elev: "var(--shadow-3)",
+        pop: "var(--shadow-4)",
+        epic: "var(--shadow-5)",
+        glow: "var(--shadow-glow)",
+      },
+      fontFamily: {
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "monospace"],
+      },
+      animation: {
+        "fade-up": "fade-up 380ms var(--ease, cubic-bezier(0.22,1,0.36,1))",
+        "fade-down": "fade-down 380ms var(--ease, cubic-bezier(0.22,1,0.36,1))",
+        "scale-in": "scale-in 220ms var(--ease, cubic-bezier(0.22,1,0.36,1))",
+        "slide-right": "slide-right 280ms var(--ease, cubic-bezier(0.22,1,0.36,1))",
+        "pulse-ring": "pulse-ring 1.9s ease-out infinite",
+        shimmer: "shimmer 1.6s linear infinite",
+        glow: "glow 2s ease-in-out infinite",
+      },
+    },
+  },
+  plugins: [],
+};
+export default config;

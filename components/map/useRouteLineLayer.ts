@@ -58,13 +58,19 @@ export function useRouteLineLayer(params: {
             map.addSource(srcId, { type: "geojson", data: { type: "FeatureCollection", features } as any });
             const beforeId = map.getLayer("all-stops-glow") ? "all-stops-glow" : undefined;
             const halfWidth = r.mode === "TRAM" ? 4.5 : 3;
-            // Per-direction offset: ±halfWidth so the two tracks are visually parallel
+            // Per-direction offset (pixels at current zoom): ±k × halfWidth so the
+            // two tracks are visibly parallel even at the default zoom (~12.2).
+            // The previous ramp started at 0 at zoom 11 so the two directions
+            // overlapped at the initial view — bump the floor so the separation
+            // is readable from minZoom, and keep it bounded at high zoom to avoid
+            // making the lines look like they're on neighboring streets.
             const offsetExpr: any = [
               "interpolate", ["linear"], ["zoom"],
-              11, ["*", ["get", "sign"], 0],
-              13, ["*", ["get", "sign"], halfWidth * 0.5],
-              16, ["*", ["get", "sign"], halfWidth],
-              18, ["*", ["get", "sign"], halfWidth * 1.3],
+              10, ["*", ["get", "sign"], halfWidth * 0.6],
+              12, ["*", ["get", "sign"], halfWidth * 1.0],
+              14, ["*", ["get", "sign"], halfWidth * 1.3],
+              16, ["*", ["get", "sign"], halfWidth * 1.6],
+              18, ["*", ["get", "sign"], halfWidth * 1.8],
             ];
             map.addLayer({
               id: `${srcId}-halo`,

@@ -56,7 +56,10 @@ export function useVehicleLayer(params: {
       return;
     }
 
-    const TICK_MS = 12_000;
+    // Poll at 8 s to match the upstream stoptimes cache (revalidate=8) and
+    // the SSE tick — keeps the marker chasing a fresh server prediction
+    // instead of extrapolating from a 12-second-old sample.
+    const TICK_MS = 8_000;
     let stopped = false;
 
     async function tick() {

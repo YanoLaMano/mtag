@@ -186,6 +186,42 @@ const DWELL_FREEZE_MAX = 90;  // s — cap reported dwell so a stale event doesn
 // well before the next one.
 const DWELL_PAD_BEFORE_S = 3;
 const DWELL_PAD_AFTER_S = 10;
+// Trapezoidal acceleration: ramp-up / cruise / ramp-down fractions of the
+// segment, with the ramps capped at this many seconds so they don't dominate
+// short segments. Real tram acceleration is ~1 m/s² and cruise ~50 km/h, so
+// a hand-tuned 4 s ramp matches actual physics within the noise of the
+// 8-second poll cadence.
+const ACCEL_RAMP_S = 4;
+
+/**
+ * Trapezoidal speed profile: 0 → cruise → 0. Returns the *distance fraction*
+ * covered by time `progress` ∈ [0, 1] over a segment of `spanS` seconds.
+ * For long segments the ramps take ACCEL_RAMP_S each, the rest is cruise.
+ * For short segments (≤ 2·ACCEL_RAMP_S) it collapses to a triangle — no
+ * cruise phase, peak speed in the middle, distance-covered curve is a smooth
+ * S without flat top.
+ */
+function trapezoidProfile(progress: number, spanS: number): number {
+  if (progress <= 0) return 0;
+  if (progress >= 1) return 1;
+  const ramp = Math.min(ACCEL_RAMP_S / spanS, 0.5); // ramp fraction of segment
+  const cruise = 1 - 2 * ramp;
+  // Integrate the trapezoidal speed curve to get position fraction.
+  // Speed peak = 1 / (ramp + cruise) so total area under the curve == 1.
+  const peak = 1 / (ramp + cruise);
+  if (progress < ramp) {
+    // Acceleration phase: speed grows linearly from 0 to peak.
+    return 0.5 * peak * (progress * progress) / ramp;
+  }
+  if (progress < ramp + cruise) {
+    // Cruise phase.
+    const rampArea = 0.5 * peak * ramp;
+    return rampArea + peak * (progress - ramp);
+  }
+  // Deceleration phase: mirror of acceleration.
+  const remaining = 1 - progress;
+  return 1 - 0.5 * peak * (remaining * remaining) / ramp;
+}
 
 export function buildVehicles(
   route: Route,
@@ -290,12 +326,19 @@ export function buildVehicles(
       if (!a || !b) continue;
       const span = Math.max(1, next.arrive - prev.depart);
       progress = Math.min(1, Math.max(0, (nowSec - prev.depart) / span));
+      // Trapezoidal speed profile: a real tram accelerates ~3-5 s after
+      // leaving a stop, cruises, then brakes ~3-5 s before the next one.
+      // Linear progress shows constant speed all the way through; a piecewise
+      // trapezoid is a much better match without over-egging the curve like
+      // a sinusoidal ease would. Accel/brake fraction shrinks for short
+      // segments so we don't end up cruising for 0 seconds.
+      const segPos = trapezoidProfile(progress, span);
 
       if (polyline) {
         const projA = projectStop(polyline, [a.lon, a.lat]);
         const projB = projectStop(polyline, [b.lon, b.lat]);
         if (Math.abs(projA.dist - projB.dist) > 1e-9) {
-          const target = projA.dist + (projB.dist - projA.dist) * progress;
+          const target = projA.dist + (projB.dist - projA.dist) * segPos;
           const reversed = projB.dist < projA.dist;
           const r = pointAtDistance(polyline, target, reversed);
           lon = r.pt[0]; lat = r.pt[1]; brg = r.bearing;
@@ -306,8 +349,8 @@ export function buildVehicles(
         }
       } else {
         // No polyline at all — straight line between raw stop coords.
-        lat = a.lat + (b.lat - a.lat) * progress;
-        lon = a.lon + (b.lon - a.lon) * progress;
+        lat = a.lat + (b.lat - a.lat) * segPos;
+        lon = a.lon + (b.lon - a.lon) * segPos;
         brg = computeBearing([a.lon, a.lat], [b.lon, b.lat]);
       }
     } else if (next) {

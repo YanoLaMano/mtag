@@ -28,8 +28,28 @@ export function formatRelativeTime(secondsFromNow: number): string {
   return `${h}h${(m % 60).toString().padStart(2, "0")}`;
 }
 
-/** Seconds since midnight in Europe/Paris (matches API's serviceDay+seconds). */
+/**
+ * Seconds since midnight in Europe/Paris (matches the upstream API's
+ * serviceDay + seconds-since-midnight convention).
+ *
+ * The previous implementation used `new Date().getHours()` which returns
+ * the *runtime's* local time. That's only correct when the runtime is
+ * actually in Paris time. On Vercel/Fly/AWS the runtime is UTC, so the
+ * computed `nowSec` was 1-2 h off, and every vehicle's prev/next/dwell
+ * classification in interpolate.ts was misaligned with the realtime data
+ * — which manifests as vehicles displayed 1-2 stops behind their real
+ * position. Use Intl with an explicit timeZone to force Paris time on
+ * both server and client (the Grenoble client is already in CET, but
+ * being explicit keeps the API symmetric).
+ */
 export function nowSecondsSinceMidnight(): number {
-  const d = new Date();
-  return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+  const parts = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const get = (t: string) => parseInt(parts.find((p) => p.type === t)?.value ?? "0", 10);
+  return get("hour") * 3600 + get("minute") * 60 + get("second");
 }

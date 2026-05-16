@@ -20,7 +20,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ routeId: s
   }
   if (!snapshot) return NextResponse.json({ error: "Unknown route" }, { status: 404 });
 
-  const patternsByStop = await fetchVehiclePatterns(routeId, snapshot.stops, 15);
+  // 8 s mirrors the SSE tick — keeps the snapshot route's freshness aligned
+  // with the streaming route and well under the client's 12 s poll cadence.
+  const patternsByStop = await fetchVehiclePatterns(routeId, snapshot.stops, 8);
   const vehicles = buildVehicles(
     snapshot.route,
     snapshot.stops,

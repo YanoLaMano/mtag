@@ -66,11 +66,11 @@ export function useRouteLineLayer(params: {
             // making the lines look like they're on neighboring streets.
             const offsetExpr: any = [
               "interpolate", ["linear"], ["zoom"],
-              10, ["*", ["get", "sign"], halfWidth * 1.2],
-              12, ["*", ["get", "sign"], halfWidth * 2.0],
-              14, ["*", ["get", "sign"], halfWidth * 2.6],
-              16, ["*", ["get", "sign"], halfWidth * 3.0],
-              18, ["*", ["get", "sign"], halfWidth * 3.5],
+              10, ["*", ["get", "sign"], halfWidth * 2.0],
+              12, ["*", ["get", "sign"], halfWidth * 3.5],
+              14, ["*", ["get", "sign"], halfWidth * 4.5],
+              16, ["*", ["get", "sign"], halfWidth * 5.5],
+              18, ["*", ["get", "sign"], halfWidth * 6.5],
             ];
             map.addLayer({
               id: `${srcId}-halo`,

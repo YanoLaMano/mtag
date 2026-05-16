@@ -6,6 +6,19 @@ import { readableOn } from "@/lib/utils";
 import { Anim, interpLat, interpLon, interpBearing } from "./anim";
 import type { AppState, AppDispatch } from "./types";
 
+// Approximate metric distance between two lat/lon (Pythagore + cos(lat) on
+// the longitude axis — fine for the few-km deltas we care about here).
+const COS_LAT = Math.cos((45.18 * Math.PI) / 180);
+function distM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const dx = (lon1 - lon2) * COS_LAT * 111_320;
+  const dy = (lat1 - lat2) * 111_320;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+// At TICK_MS=12 s a tram never moves more than 200 m (60 km/h). Anything
+// over this is upstream telling us "I lost the trip and found it again
+// somewhere else" — animating across the gap would draw a wormhole.
+const TELEPORT_THRESHOLD_M = 400;
+
 export function useVehicleLayer(params: {
   mapRef: RefObject<MLMap | null>;
   state: AppState;
@@ -74,9 +87,19 @@ export function useVehicleLayer(params: {
         seen.add(v.tripId);
         const existing = markersRef.current.get(v.tripId);
         const prevAnim = animRef.current.get(v.tripId);
-        const fromLat = prevAnim ? interpLat(prevAnim, now) : v.lat;
-        const fromLon = prevAnim ? interpLon(prevAnim, now) : v.lon;
-        const fromBearing = prevAnim ? interpBearing(prevAnim, now) : v.bearing;
+        let fromLat = prevAnim ? interpLat(prevAnim, now) : v.lat;
+        let fromLon = prevAnim ? interpLon(prevAnim, now) : v.lon;
+        let fromBearing = prevAnim ? interpBearing(prevAnim, now) : v.bearing;
+        // Teleport rejection: if upstream jumps the trip more than ~400 m
+        // between two ticks (impossible at any realistic transit speed over
+        // 12 s), snap the marker — animating would draw a wormhole through
+        // unrelated streets and confuse the user. The vehicle simply
+        // reappears at the new position with no easing.
+        if (prevAnim && distM(fromLat, fromLon, v.lat, v.lon) > TELEPORT_THRESHOLD_M) {
+          fromLat = v.lat;
+          fromLon = v.lon;
+          fromBearing = v.bearing;
+        }
         animRef.current.set(v.tripId, {
           fromLat, fromLon, fromBearing,
           toLat: v.lat, toLon: v.lon, toBearing: v.bearing,

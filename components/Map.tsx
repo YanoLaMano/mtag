@@ -7,22 +7,37 @@ import { hex, readableOn } from "@/lib/utils";
 
 const GRENOBLE: [number, number] = [5.7245, 45.1885];
 
-// Smooth animation helpers
+// Smooth animation helpers.
+//
+// Strategy: linear interpolation between two server samples, and *keep
+// extrapolating* along the same velocity vector past the target up to k=1.5
+// (so up to TICK_MS/2 extra seconds). The server payload is always behind
+// real time (revalidate cache, network) — animating purely A→B would leave
+// the marker visibly trailing. With linear extrapolation the marker stays
+// roughly aligned with reality and the next tick gently corrects it.
+//
+// `frozen=true` (set when the server reports the vehicle is dwelling at
+// a stop) pins the marker exactly to the target — no extrapolation through
+// the stop.
 type Anim = {
   fromLat: number; fromLon: number; fromBearing: number;
   toLat: number; toLon: number; toBearing: number;
   startTs: number; endTs: number;
+  frozen?: boolean;
 };
-function easeOutCubic(t: number) { return 1 - Math.pow(1 - t, 3); }
+const MAX_EXTRAPOLATION = 1.5;
 function fracOf(a: Anim, now: number) {
+  if (a.frozen) return 1;
   if (now <= a.startTs) return 0;
-  if (now >= a.endTs) return 1;
-  return easeOutCubic((now - a.startTs) / (a.endTs - a.startTs));
+  const k = (now - a.startTs) / Math.max(1, a.endTs - a.startTs);
+  return Math.min(k, MAX_EXTRAPOLATION);
 }
 function interpLat(a: Anim, now: number) { const k = fracOf(a, now); return a.fromLat + (a.toLat - a.fromLat) * k; }
 function interpLon(a: Anim, now: number) { const k = fracOf(a, now); return a.fromLon + (a.toLon - a.fromLon) * k; }
 function interpBearing(a: Anim, now: number) {
-  const k = fracOf(a, now);
+  // Bearing eases over the first half so direction changes look natural,
+  // then locks — extrapolating bearing past k=1 would over-rotate at corners.
+  const k = Math.min(1, fracOf(a, now));
   let diff = a.toBearing - a.fromBearing;
   if (diff > 180) diff -= 360; else if (diff < -180) diff += 360;
   return (a.fromBearing + diff * k + 360) % 360;
@@ -965,11 +980,7 @@ export default function MapView() {
   // Vehicle layer: HTML markers w/ smooth client-side interpolation between ticks.
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   // Per-vehicle animation state: from/to coords & timestamps for interpolation
-  const animRef = useRef<Map<string, {
-    fromLat: number; fromLon: number; fromBearing: number;
-    toLat: number; toLon: number; toBearing: number;
-    startTs: number; endTs: number;
-  }>>(new Map());
+  const animRef = useRef<Map<string, Anim>>(new Map());
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -1034,6 +1045,7 @@ export default function MapView() {
           toLat: v.lat, toLon: v.lon, toBearing: v.bearing,
           startTs: now,
           endTs: now + TICK_MS,
+          frozen: !!v.atStopId,
         });
 
         if (!existing) {

@@ -2,27 +2,9 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/lib/store";
 import type { Vehicle } from "@/lib/types";
-import { cn, formatRelativeTime, nowSecondsSinceMidnight } from "@/lib/utils";
+import { cn, formatRelativeTime, nowSecondsSinceMidnight, tripProgress } from "@/lib/utils";
 import { Bus, ChevronRight, Clock, MapPin, Radio, TrainFront } from "lucide-react";
 import { LinePill } from "./LinePill";
-
-/**
- * Server returns vehicle.progress at the moment of the request. Between two
- * server ticks (12 s) the static value would freeze the UI — the progress
- * bar would look "dead" right after a click on a line. Re-derive it from
- * the per-trip prev.depart / next.arrive timestamps that are already in
- * tripStops, against the current wall-clock Paris time. Tick by tick the
- * bar advances by ~1/span every second — smooth, no extra fetches.
- */
-function liveProgress(v: Vehicle, nowSec: number): number {
-  if (!v.tripStops || !v.prevStopId || !v.nextStopId) return v.progress;
-  const prev = v.tripStops.find((s) => s.stopId === v.prevStopId);
-  const next = v.tripStops.find((s) => s.stopId === v.nextStopId);
-  if (!prev || !next) return v.progress;
-  const span = next.arrive - prev.depart;
-  if (span <= 0) return v.progress;
-  return Math.max(0, Math.min(1, (nowSec - prev.depart) / span));
-}
 
 export function LiveVehiclesPanel() {
   const { state } = useApp();
@@ -128,7 +110,7 @@ function DirectionGroup({
       </div>
       <ul>
         {vehicles.map((v) => {
-          const p = liveProgress(v, nowSec);
+          const p = tripProgress(v, nowSec);
           return (
             <li key={v.tripId} className="px-4 py-2.5 hover:bg-surface/40 transition-colors">
               <div className="flex items-center gap-2.5">

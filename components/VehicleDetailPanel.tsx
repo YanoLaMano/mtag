@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/store";
 import type { Vehicle, VehicleTripStop } from "@/lib/types";
-import { cn, formatRelativeTime, nowSecondsSinceMidnight } from "@/lib/utils";
+import { cn, formatRelativeTime, nowSecondsSinceMidnight, tripProgress } from "@/lib/utils";
 import { LinePill } from "./LinePill";
 import { Crosshair, X, MapPin } from "lucide-react";
 
@@ -10,6 +10,14 @@ export function VehicleDetailPanel() {
   const { state, dispatch } = useApp();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const tickRef = useRef<NodeJS.Timeout | null>(null);
+  // Tick once a second so tripProgress recomputes against current time —
+  // otherwise the "X% du trajet" line would freeze for 8 s between polls.
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    setNowTick(nowSecondsSinceMidnight());
+    const iv = setInterval(() => setNowTick(nowSecondsSinceMidnight()), 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     if (!state.selectedVehicleTripId || !state.selectedRouteId) {
@@ -56,7 +64,7 @@ export function VehicleDetailPanel() {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[11px] text-muted tabular">
-                {Math.round(vehicle.progress * 100)}% du trajet
+                {Math.round(tripProgress(vehicle, nowTick) * 100)}% du trajet
               </span>
               <span className="text-subtle">·</span>
               <DelayChip delay={vehicle.delay} />

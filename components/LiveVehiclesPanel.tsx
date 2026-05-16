@@ -2,15 +2,40 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/lib/store";
 import type { Vehicle } from "@/lib/types";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime, nowSecondsSinceMidnight } from "@/lib/utils";
 import { Bus, ChevronRight, Clock, MapPin, Radio, TrainFront } from "lucide-react";
 import { LinePill } from "./LinePill";
+
+/**
+ * Server returns vehicle.progress at the moment of the request. Between two
+ * server ticks (12 s) the static value would freeze the UI — the progress
+ * bar would look "dead" right after a click on a line. Re-derive it from
+ * the per-trip prev.depart / next.arrive timestamps that are already in
+ * tripStops, against the current wall-clock Paris time. Tick by tick the
+ * bar advances by ~1/span every second — smooth, no extra fetches.
+ */
+function liveProgress(v: Vehicle, nowSec: number): number {
+  if (!v.tripStops || !v.prevStopId || !v.nextStopId) return v.progress;
+  const prev = v.tripStops.find((s) => s.stopId === v.prevStopId);
+  const next = v.tripStops.find((s) => s.stopId === v.nextStopId);
+  if (!prev || !next) return v.progress;
+  const span = next.arrive - prev.depart;
+  if (span <= 0) return v.progress;
+  return Math.max(0, Math.min(1, (nowSec - prev.depart) / span));
+}
 
 export function LiveVehiclesPanel() {
   const { state } = useApp();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  // Tick once a second so the live-progress derivation re-renders.
+  const [nowSec, setNowSec] = useState(0);
+  useEffect(() => {
+    setNowSec(nowSecondsSinceMidnight());
+    const iv = setInterval(() => setNowSec(nowSecondsSinceMidnight()), 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     if (!state.selectedRouteId) { setVehicles([]); return; }
@@ -79,7 +104,7 @@ export function LiveVehiclesPanel() {
             </div>
           ) : (
             Array.from(byHeadsign.entries()).map(([headsign, vs]) => (
-              <DirectionGroup key={headsign} headsign={headsign} vehicles={vs} route={route} />
+              <DirectionGroup key={headsign} headsign={headsign} vehicles={vs} route={route} nowSec={nowSec} />
             ))
           )}
         </div>
@@ -89,8 +114,8 @@ export function LiveVehiclesPanel() {
 }
 
 function DirectionGroup({
-  headsign, vehicles, route,
-}: { headsign: string; vehicles: Vehicle[]; route: any }) {
+  headsign, vehicles, route, nowSec,
+}: { headsign: string; vehicles: Vehicle[]; route: any; nowSec: number }) {
   return (
     <div className="border-b last:border-b-0">
       <div className="px-4 py-2 flex items-center gap-2 bg-surface/40">
@@ -102,31 +127,34 @@ function DirectionGroup({
         </span>
       </div>
       <ul>
-        {vehicles.map((v) => (
-          <li key={v.tripId} className="px-4 py-2.5 hover:bg-surface/40 transition-colors">
-            <div className="flex items-center gap-2.5">
-              <div
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ background: v.color }}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <MapPin size={11} className="text-subtle shrink-0" />
-                  <p className="text-xs font-medium text-fg truncate">
-                    {v.nextStopName || "—"}
-                  </p>
+        {vehicles.map((v) => {
+          const p = liveProgress(v, nowSec);
+          return (
+            <li key={v.tripId} className="px-4 py-2.5 hover:bg-surface/40 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: v.color }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin size={11} className="text-subtle shrink-0" />
+                    <p className="text-xs font-medium text-fg truncate">
+                      {v.nextStopName || "—"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <ProgressBar value={p} color={v.color} />
+                    <span className="text-[10px] text-muted tabular shrink-0">
+                      {Math.round(p * 100)}%
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <ProgressBar value={v.progress} color={v.color} />
-                  <span className="text-[10px] text-muted tabular shrink-0">
-                    {Math.round(v.progress * 100)}%
-                  </span>
-                </div>
+                <DelayBadge delay={v.delay} />
               </div>
-              <DelayBadge delay={v.delay} />
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -136,7 +164,7 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
   return (
     <div className="flex-1 h-1 rounded-full bg-border overflow-hidden">
       <div
-        className="h-full rounded-full transition-[width] duration-1000 ease-out"
+        className="h-full rounded-full transition-[width] duration-700 ease-linear"
         style={{
           width: `${Math.min(100, Math.max(0, value * 100))}%`,
           background: color,

@@ -176,18 +176,16 @@ interface Event {
   realtime: boolean;
 }
 
-/**
- * Tightened from the original 4e-6 (~220 m) to ~120 m for both modes,
- * with an extra-strict mode for trams (rails stay glued to track within
- * a few meters). Acceptance is in isotropic-degree² units.
- *
- *   120 m / 111_320 m·deg⁻¹ ≈ 0.00108°  →  squared ≈ 1.16e-6
- *    70 m / 111_320 m·deg⁻¹ ≈ 0.00063°  →  squared ≈ 3.96e-7
- */
-const PROJ_OK_BUS = 1.2e-6;   // ~120 m
-const PROJ_OK_TRAM = 4e-7;    // ~70 m
 const TRIP_ENDED_GRACE = 60;  // s — keep vehicle visible 60 s past last stop
 const DWELL_FREEZE_MAX = 90;  // s — cap reported dwell so a stale event doesn't pin a phantom forever
+// Padding around the upstream-reported [arrive, depart] interval: in practice
+// the feed often sets arrive == depart even for trams that physically stop
+// 20-30 s at every station. Without this pad the dwell branch fires for one
+// integer-second window per stop — invisible. The pad enforces a minimum
+// visible dwell of ~13 s at every stop while still releasing the vehicle
+// well before the next one.
+const DWELL_PAD_BEFORE_S = 3;
+const DWELL_PAD_AFTER_S = 10;
 
 export function buildVehicles(
   route: Route,
@@ -215,7 +213,6 @@ export function buildVehicles(
   }
 
   const polylines = geometry ? buildPolylines(geometry) : [];
-  const projOk = route.mode === "TRAM" ? PROJ_OK_TRAM : PROJ_OK_BUS;
 
   const vehicles: Vehicle[] = [];
 
@@ -229,13 +226,14 @@ export function buildVehicles(
     const events = hasRT ? rawEvents.filter((e) => e.realtime) : rawEvents;
     if (events.length === 0) continue;
 
-    // Classify events relative to now.
+    // Classify events relative to now. The dwell window is padded so the
+    // vehicle visibly stops at every arrêt even when upstream reports
+    // arrive == depart (which it often does).
     let prev: Event | null = null;
     let next: Event | null = null;
     let dwellingAt: Event | null = null;
     for (const e of events) {
-      if (e.arrive <= nowSec && e.depart >= nowSec) {
-        // Dwelling exactly at this stop right now.
+      if (e.arrive - DWELL_PAD_BEFORE_S <= nowSec && nowSec <= e.depart + DWELL_PAD_AFTER_S) {
         dwellingAt = e;
       } else if (e.depart < nowSec) {
         prev = e;
@@ -247,18 +245,43 @@ export function buildVehicles(
     // #8 Drop trips that ended more than TRIP_ENDED_GRACE seconds ago.
     if (!next && !dwellingAt && prev && nowSec - prev.depart > TRIP_ENDED_GRACE) continue;
 
+    // Pick the polyline for the whole trip once. Used for BOTH dwell (so the
+    // vehicle pins to the projection of the stop on the line — i.e. exactly
+    // on the rendered trace, not the raw stop coords which sit on the
+    // sidewalk a few metres off) AND between-stops interpolation. The
+    // previous PROJ_OK gate would silently drop back to straight-line
+    // between raw stop coords when the projection was loose, which let
+    // vehicles drift off the rendered line — the user wants them always
+    // glued to their own line. We now always snap when a polyline exists.
+    const tripStopsForPolyline = events.map((e) => stopById.get(e.stopId)!).filter(Boolean);
+    const picked = polylines.length ? pickBestPolyline(polylines, tripStopsForPolyline) : null;
+    const polyline = picked?.line ?? null;
+
+    const onLineProjection = (s: { lat: number; lon: number }) => {
+      if (!polyline) return null;
+      const proj = projectStop(polyline, [s.lon, s.lat]);
+      const r = pointAtDistance(polyline, proj.dist);
+      return { lat: r.pt[1], lon: r.pt[0], brg: r.bearing, dist: proj.dist };
+    };
+
     let lat = 0, lon = 0, brg = 0, progress = 0;
     let atStopId: string | null = null;
 
     if (dwellingAt) {
-      // #2 Vehicle is parked at this stop. Don't move it.
+      // Vehicle is at this stop — pin to the stop position on the polyline
+      // (or raw stop coords if no polyline).
       const s = stopById.get(dwellingAt.stopId);
       if (!s) continue;
-      // Sanity cap on dwell — if the upstream feed left a stale event
-      // (e.g. RT lost), we still drop the vehicle after DWELL_FREEZE_MAX.
       if (nowSec - dwellingAt.arrive > DWELL_FREEZE_MAX) continue;
-      lat = s.lat;
-      lon = s.lon;
+      const onLine = onLineProjection(s);
+      if (onLine) {
+        lat = onLine.lat;
+        lon = onLine.lon;
+        brg = onLine.brg;
+      } else {
+        lat = s.lat;
+        lon = s.lon;
+      }
       atStopId = dwellingAt.stopId;
       progress = 0;
     } else if (prev && next && prev.stopId !== next.stopId) {
@@ -268,28 +291,21 @@ export function buildVehicles(
       const span = Math.max(1, next.arrive - prev.depart);
       progress = Math.min(1, Math.max(0, (nowSec - prev.depart) / span));
 
-      const tripStops = events.map((e) => stopById.get(e.stopId)!).filter(Boolean);
-      const picked = polylines.length ? pickBestPolyline(polylines, tripStops) : null;
-
-      let positioned = false;
-      if (picked) {
-        const { line: bestLine } = picked;
-        const projA = projectStop(bestLine, [a.lon, a.lat]);
-        const projB = projectStop(bestLine, [b.lon, b.lat]);
-        if (projA.d2 < projOk && projB.d2 < projOk) {
-          const dA = projA.dist;
-          const dB = projB.dist;
-          if (Math.abs(dA - dB) > 1e-9) {
-            const target = dA + (dB - dA) * progress;
-            const reversed = dB < dA;
-            const r = pointAtDistance(bestLine, target, reversed);
-            lon = r.pt[0]; lat = r.pt[1]; brg = r.bearing;
-            positioned = true;
-          }
+      if (polyline) {
+        const projA = projectStop(polyline, [a.lon, a.lat]);
+        const projB = projectStop(polyline, [b.lon, b.lat]);
+        if (Math.abs(projA.dist - projB.dist) > 1e-9) {
+          const target = projA.dist + (projB.dist - projA.dist) * progress;
+          const reversed = projB.dist < projA.dist;
+          const r = pointAtDistance(polyline, target, reversed);
+          lon = r.pt[0]; lat = r.pt[1]; brg = r.bearing;
+        } else {
+          // Stops project to the same point on the line — sit there.
+          const r = pointAtDistance(polyline, projA.dist);
+          lon = r.pt[0]; lat = r.pt[1]; brg = r.bearing;
         }
-      }
-      if (!positioned) {
-        // Fallback: straight line between stops.
+      } else {
+        // No polyline at all — straight line between raw stop coords.
         lat = a.lat + (b.lat - a.lat) * progress;
         lon = a.lon + (b.lon - a.lon) * progress;
         brg = computeBearing([a.lon, a.lat], [b.lon, b.lat]);
@@ -297,11 +313,15 @@ export function buildVehicles(
     } else if (next) {
       const b = stopById.get(next.stopId);
       if (!b) continue;
-      lat = b.lat; lon = b.lon;
+      const onLine = onLineProjection(b);
+      if (onLine) { lat = onLine.lat; lon = onLine.lon; brg = onLine.brg; }
+      else { lat = b.lat; lon = b.lon; }
     } else if (prev) {
       const a = stopById.get(prev.stopId);
       if (!a) continue;
-      lat = a.lat; lon = a.lon;
+      const onLine = onLineProjection(a);
+      if (onLine) { lat = onLine.lat; lon = onLine.lon; brg = onLine.brg; }
+      else { lat = a.lat; lon = a.lon; }
     } else {
       continue;
     }

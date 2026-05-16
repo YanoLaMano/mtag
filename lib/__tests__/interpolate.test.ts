@@ -207,8 +207,12 @@ describe("buildVehicles — polyline snapping", () => {
     expect(v[0].lon).toBeCloseTo(5.720, 4);
   });
 
-  it("falls back to straight line when polyline is >300m off the stops", () => {
-    // Stops 0.005° east of the polyline ≈ 393 m offset — way beyond PROJ_OK_BUS.
+  it("always snaps to the polyline when one exists, even with stops far off", () => {
+    // Stops 0.005° east of the polyline ≈ 393 m offset. The previous
+    // implementation rejected this via PROJ_OK and fell back to a straight
+    // line between the raw stop coords — which placed the vehicle *off* its
+    // rendered route line. New behavior: always snap so the vehicle stays
+    // visually attached to its line.
     const stops = [
       makeStop("A", 45.180, 5.725),
       makeStop("B", 45.200, 5.725),
@@ -216,14 +220,12 @@ describe("buildVehicles — polyline snapping", () => {
     const geom = straightGeometry();
     const v = buildVehicles(makeRoute("BUS"), stops, groupByStop(...makeTimes()), NOW, geom);
     expect(v).toHaveLength(1);
-    // Fallback: straight line between the two stops, both at lon=5.725
-    expect(v[0].lon).toBeCloseTo(5.725, 4);
+    expect(v[0].lon).toBeCloseTo(5.720, 4); // snapped, NOT 5.725
   });
 
-  it("TRAM rejects a polyline that BUS accepts (~100m off)", () => {
-    // Stops 0.0013° east of the polyline.
-    // Isotropic distance: 0.0013 * 0.7059 ≈ 9.18e-4 → squared ≈ 8.4e-7.
-    // BUS tolerance 1.2e-6 → accepts. TRAM tolerance 4e-7 → rejects.
+  it("TRAM and BUS both snap identically when a polyline exists", () => {
+    // The mode-specific PROJ_OK gate is gone — both modes snap whenever the
+    // route has a polyline. The visual stays glued to the rendered line.
     const stops = [
       makeStop("A", 45.180, 5.7213),
       makeStop("B", 45.200, 5.7213),
@@ -235,11 +237,18 @@ describe("buildVehicles — polyline snapping", () => {
 
     expect(vBus).toHaveLength(1);
     expect(vTram).toHaveLength(1);
-
-    // BUS snaps onto the polyline at lon=5.720.
     expect(vBus[0].lon).toBeCloseTo(5.720, 4);
-    // TRAM falls back to straight line between stops at lon=5.7213.
-    expect(vTram[0].lon).toBeCloseTo(5.7213, 4);
+    expect(vTram[0].lon).toBeCloseTo(5.720, 4);
+  });
+
+  it("falls back to a straight line between raw stops when no polyline exists", () => {
+    const stops = [
+      makeStop("A", 45.180, 5.725),
+      makeStop("B", 45.200, 5.725),
+    ];
+    const v = buildVehicles(makeRoute("BUS"), stops, groupByStop(...makeTimes()), NOW);
+    expect(v).toHaveLength(1);
+    expect(v[0].lon).toBeCloseTo(5.725, 4);
   });
 });
 

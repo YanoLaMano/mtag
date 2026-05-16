@@ -30,13 +30,17 @@ export function Splash() {
         {/* Coloured ring made of 8 segments */}
         <g className="splash-ring">
           {SEGMENTS.map((c, i) => {
+            // Round trig output so Safari/JSC and Node/V8 produce byte-identical
+            // SVG path strings — otherwise hydration trips on ULP-level diffs
+            // in number-to-string serialization.
             const a0 = (i / SEGMENTS.length) * 360 - 90 + 3;
             const a1 = ((i + 1) / SEGMENTS.length) * 360 - 90 - 3;
             const r = 50;
-            const x0 = 60 + r * Math.cos((a0 * Math.PI) / 180);
-            const y0 = 60 + r * Math.sin((a0 * Math.PI) / 180);
-            const x1 = 60 + r * Math.cos((a1 * Math.PI) / 180);
-            const y1 = 60 + r * Math.sin((a1 * Math.PI) / 180);
+            const round = (n: number) => Math.round(n * 1000) / 1000;
+            const x0 = round(60 + r * Math.cos((a0 * Math.PI) / 180));
+            const y0 = round(60 + r * Math.sin((a0 * Math.PI) / 180));
+            const x1 = round(60 + r * Math.cos((a1 * Math.PI) / 180));
+            const y1 = round(60 + r * Math.sin((a1 * Math.PI) / 180));
             const large = a1 - a0 > 180 ? 1 : 0;
             return (
               <path

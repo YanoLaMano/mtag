@@ -52,7 +52,9 @@ export function useToast() {
 }
 
 function ToastViewport({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: string) => void }) {
-  if (typeof window === "undefined") return null;
+  // Render the same empty container on both server and client — guarding with
+  // typeof window caused a hydration mismatch (server: null, client: <div>).
+  // The viewport stays empty until the first push() anyway.
   return (
     <div
       aria-live="polite"

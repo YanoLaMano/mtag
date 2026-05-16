@@ -27,6 +27,19 @@ export function useRouteLineLayer(params: {
     const cache: Map<string, LineGeometry> =
       (map as any).__geomCache ?? ((map as any).__geomCache = new Map());
 
+    // Stable per-route offset in [-3, +3] pixels, deterministic from routeId.
+    // The upstream API returns a single LineString per route (verified across
+    // tram + Chrono + Proximo). Multiple routes share streets (Verdun-Préf,
+    // Chavant, Gares…) so a naive zero-offset would stack them and only the
+    // topmost color would be visible — the official M réso map "bundles"
+    // shared corridors by hand. We approximate that with a hash-based jitter
+    // small enough that every line stays glued to the real street centerline
+    // (max ~9 m at zoom 18, sub-meter at city scale).
+    function routeOffsetPx(routeId: string): number {
+      let h = 0;
+      for (let i = 0; i < routeId.length; i++) h = (h * 31 + routeId.charCodeAt(i)) | 0;
+      return (Math.abs(h) % 7) - 3; // {-3,-2,-1,0,1,2,3}
+    }
     (async () => {
       for (const r of visible) {
         if (cache.has(r.id)) continue;
@@ -35,43 +48,28 @@ export function useRouteLineLayer(params: {
           cache.set(r.id, data);
           const srcId = `line-${r.id}`;
           if (!map.getSource(srcId)) {
-            // Split MultiLineString into per-direction features with alternating offset
+            // Normalize any MultiLineString to a flat list of LineString features.
+            // No per-direction split or sign flip — the upstream geometry has no
+            // direction info (it's a single street centerline), so faking two
+            // tracks just drifts the trace off the real road.
             const features: any[] = [];
             for (const feat of data.features || []) {
               const g: any = feat.geometry;
               if (g?.type === "MultiLineString") {
-                (g.coordinates as any[]).forEach((coords, i) => {
+                for (const coords of g.coordinates as any[]) {
                   features.push({
                     type: "Feature",
-                    properties: { ...feat.properties, dir: i, sign: i % 2 === 0 ? -1 : 1 },
+                    properties: { ...feat.properties },
                     geometry: { type: "LineString", coordinates: coords },
                   });
-                });
+                }
               } else if (g?.type === "LineString") {
-                features.push({
-                  type: "Feature",
-                  properties: { ...feat.properties, dir: 0, sign: -1 },
-                  geometry: g,
-                });
+                features.push({ type: "Feature", properties: { ...feat.properties }, geometry: g });
               }
             }
             map.addSource(srcId, { type: "geojson", data: { type: "FeatureCollection", features } as any });
             const beforeId = map.getLayer("all-stops-glow") ? "all-stops-glow" : undefined;
-            const halfWidth = r.mode === "TRAM" ? 4.5 : 3;
-            // Per-direction offset (pixels at current zoom): ±k × halfWidth so the
-            // two tracks are visibly parallel even at the default zoom (~12.2).
-            // The previous ramp started at 0 at zoom 11 so the two directions
-            // overlapped at the initial view — bump the floor so the separation
-            // is readable from minZoom, and keep it bounded at high zoom to avoid
-            // making the lines look like they're on neighboring streets.
-            const offsetExpr: any = [
-              "interpolate", ["linear"], ["zoom"],
-              10, ["*", ["get", "sign"], halfWidth * 2.0],
-              12, ["*", ["get", "sign"], halfWidth * 3.5],
-              14, ["*", ["get", "sign"], halfWidth * 4.5],
-              16, ["*", ["get", "sign"], halfWidth * 5.5],
-              18, ["*", ["get", "sign"], halfWidth * 6.5],
-            ];
+            const offset = routeOffsetPx(r.id);
             map.addLayer({
               id: `${srcId}-halo`,
               type: "line",
@@ -81,7 +79,7 @@ export function useRouteLineLayer(params: {
                 "line-color": "#ffffff",
                 "line-width": r.mode === "TRAM" ? 7 : 5,
                 "line-opacity": 0.85,
-                "line-offset": offsetExpr,
+                "line-offset": offset,
               },
             }, beforeId);
             map.addLayer({
@@ -93,7 +91,7 @@ export function useRouteLineLayer(params: {
                 "line-color": hex(r.color),
                 "line-width": r.mode === "TRAM" ? 4.5 : 3,
                 "line-opacity": 0.95,
-                "line-offset": offsetExpr,
+                "line-offset": offset,
               },
             }, beforeId);
             // Click → select line

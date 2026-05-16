@@ -90,7 +90,7 @@ function applyAccentToDom(a: Accent) {
 function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
     case "SET_ROUTES": return { ...s, routes: a.routes };
-    case "SELECT_ROUTE": return { ...s, selectedRouteId: a.id, selectedStopId: null };
+    case "SELECT_ROUTE": return { ...s, selectedRouteId: a.id, selectedStopId: null, selectedVehicleTripId: null, followVehicle: false };
     case "SELECT_STOP": return { ...s, selectedStopId: a.id };
     case "SET_MODE": return { ...s, modeFilter: a.mode };
     case "SET_QUERY": return { ...s, query: a.query };

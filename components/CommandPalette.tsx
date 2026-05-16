@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/store";
+import type { Route } from "@/lib/types";
 import { LinePill } from "./LinePill";
 import { Search, ArrowRight, Star, Moon, Sun, Flame, Route as RouteIcon, X, Locate } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -179,9 +180,20 @@ export function CommandPalette() {
                           active ? "bg-accent/10" : "hover:bg-surface"
                         )}
                       >
-                        {a.pill ? (
-                          <LinePill route={{ ...(state.routes.find((r) => r.shortName === a.pill!.shortName) as any) }} size="sm" />
-                        ) : a.icon ? (
+                        {a.pill ? (() => {
+                          const found = state.routes.find((r) => r.shortName === a.pill!.shortName);
+                          const fake: Route = found ?? {
+                            id: a.id,
+                            gtfsId: a.id,
+                            shortName: a.pill.shortName,
+                            longName: "",
+                            color: a.pill.color,
+                            textColor: a.pill.textColor,
+                            mode: "BUS" as const,
+                            type: "",
+                          };
+                          return <LinePill route={fake} size="sm" />;
+                        })() : a.icon ? (
                           <span className={cn("w-7 h-7 rounded-md inline-flex items-center justify-center", active ? "bg-accent/15 text-accent" : "bg-surface text-fg")}>
                             <a.icon size={14} />
                           </span>

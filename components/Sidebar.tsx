@@ -30,6 +30,7 @@ export function Sidebar() {
   if (isMobile) {
     return (
       <div
+        data-cursor-off
         className="mobile-sheet"
         data-open={sheetOpen ? "true" : "false"}
         onClick={() => !sheetOpen && setSheetOpen(true)}
@@ -195,23 +196,31 @@ function RouteList() {
       <div className="flex-1 overflow-y-auto scroll-area">
         {favs.length > 0 && <Section title="Favoris" items={favs} />}
         <Section title={favs.length ? "Toutes les lignes" : null} items={rest} />
-        {filtered.length === 0 && <EmptyResults query={query => dispatch({ type: "SET_QUERY", query })} />}
+        {filtered.length === 0 && (
+          <EmptyResults
+            onReset={() => dispatch({ type: "SET_QUERY", query: "" })}
+            currentQuery={state.query}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function EmptyResults({ query }: { query: (q: string) => void }) {
+function EmptyResults({ onReset, currentQuery }: { onReset: () => void; currentQuery?: string }) {
+  const trimmed = currentQuery?.trim();
   return (
     <div className="p-8 text-center">
       <div className="w-12 h-12 mx-auto rounded-full bg-surface flex items-center justify-center mb-3">
         <Search size={18} className="text-subtle" />
       </div>
-      <p className="text-headline text-fg">Aucune ligne ne correspond</p>
+      <p className="text-headline text-fg">
+        {trimmed ? `Aucun résultat pour «${trimmed}»` : "Aucune ligne ne correspond"}
+      </p>
       <p className="text-caption mt-1">Essaie un autre terme ou retire les filtres.</p>
       <button
         type="button"
-        onClick={() => query("")}
+        onClick={() => onReset()}
         className="mt-3 text-caption text-accent hover:underline"
       >
         Réinitialiser la recherche

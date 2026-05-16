@@ -15,6 +15,11 @@ export type Anim = {
   toLat: number; toLon: number; toBearing: number;
   startTs: number; endTs: number;
   frozen?: boolean;
+  // Optional independent end timestamp for bearing easing. When the
+  // bearing delta across a tick is huge (~180°, terminus turnaround),
+  // useVehicleLayer sets this past endTs so the rotation visibly
+  // unfolds over multiple ticks instead of looking like an instant whip.
+  bearingEndTs?: number;
 };
 export const MAX_EXTRAPOLATION = 1.5;
 export function fracOf(a: Anim, now: number) {
@@ -28,7 +33,18 @@ export function interpLon(a: Anim, now: number) { const k = fracOf(a, now); retu
 export function interpBearing(a: Anim, now: number) {
   // Bearing eases over the first half so direction changes look natural,
   // then locks — extrapolating bearing past k=1 would over-rotate at corners.
-  const k = Math.min(1, fracOf(a, now));
+  // If bearingEndTs is set (large delta this tick), use it instead of endTs
+  // to stretch the rotation over a longer window.
+  let k: number;
+  if (a.frozen) {
+    k = 1;
+  } else if (now <= a.startTs) {
+    k = 0;
+  } else {
+    const bEnd = a.bearingEndTs ?? a.endTs;
+    k = (now - a.startTs) / Math.max(1, bEnd - a.startTs);
+    if (k > 1) k = 1;
+  }
   let diff = a.toBearing - a.fromBearing;
   if (diff > 180) diff -= 360; else if (diff < -180) diff += 360;
   return (a.fromBearing + diff * k + 360) % 360;

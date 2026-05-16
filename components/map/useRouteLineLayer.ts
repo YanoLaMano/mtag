@@ -46,6 +46,14 @@ export function useRouteLineLayer(params: {
         try {
           const data: LineGeometry = await fetch(`/api/line/${r.id}`).then((x) => x.json());
           cache.set(r.id, data);
+          // Notify listeners (e.g. useFitSelectedRoute) that geometry for this
+          // route just landed. Lets a route picked before its geometry resolved
+          // still get a camera fit on first fetch RTT.
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("m-line-geometry-loaded", { detail: { routeId: r.id } })
+            );
+          }
           const srcId = `line-${r.id}`;
           if (!map.getSource(srcId)) {
             // Normalize any MultiLineString to a flat list of LineString features.

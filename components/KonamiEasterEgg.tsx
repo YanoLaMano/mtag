@@ -20,6 +20,8 @@ export function KonamiEasterEgg() {
   useEffect(() => {
     let buf: string[] = [];
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       buf.push(k);
       if (buf.length > SEQUENCE.length) buf = buf.slice(-SEQUENCE.length);

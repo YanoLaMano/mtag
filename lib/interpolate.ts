@@ -339,7 +339,15 @@ export function buildVehicles(
         const projB = projectStop(polyline, [b.lon, b.lat]);
         if (Math.abs(projA.dist - projB.dist) > 1e-9) {
           const target = projA.dist + (projB.dist - projA.dist) * segPos;
-          const reversed = projB.dist < projA.dist;
+          // Use the trip-wide reversed flag when it's decisive (circular
+          // routes / loops where two consecutive stops can project
+          // monotonically increasing even though the trip as a whole runs
+          // backwards on the polyline). For straight single-direction
+          // routes, pickBestPolyline returns reversed=false and the local
+          // projection check stays in charge.
+          const localReversed = projB.dist < projA.dist;
+          const tripReversed = picked?.reversed === true;
+          const reversed = tripReversed || localReversed;
           const r = pointAtDistance(polyline, target, reversed);
           lon = r.pt[0]; lat = r.pt[1]; brg = r.bearing;
         } else {

@@ -61,8 +61,24 @@ export function useVehicleLayer(params: {
     // instead of extrapolating from a 12-second-old sample.
     const TICK_MS = 8_000;
     let stopped = false;
+    // In-flight guard: on a slow network the N-fan-out Promise.allSettled
+    // can take longer than TICK_MS. If we let the next interval fire we
+    // get out-of-order writes into animRef — an older response overwrites
+    // the newer one and the marker visibly jumps backward. Skip the entire
+    // tick when one is still running; the next interval (8 s later) picks
+    // it up.
+    let tickInFlight = false;
+    // Generation counter — guards against any stale tick that somehow
+    // finishes after a fresh one (e.g. the in-flight flag was cleared
+    // between scheduling and execution). Mygen captured at start; if it
+    // doesn't match `gen` after the await, we discard the results.
+    let gen = 0;
 
     async function tick() {
+      if (tickInFlight) return;
+      tickInFlight = true;
+      const mygen = ++gen;
+      try {
       // Visible routes following the current filter
       const targets: Route[] = state.selectedRouteId
         ? state.routes.filter((r) => r.id === state.selectedRouteId)
@@ -76,6 +92,7 @@ export function useVehicleLayer(params: {
       const results = await Promise.allSettled(
         targets.map((r) => fetch(`/api/vehicles/${r.id}`).then((x) => x.json()))
       );
+      if (mygen !== gen) return;
       for (const r of results) {
         if (r.status === "fulfilled" && r.value?.vehicles) all.push(...r.value.vehicles);
       }
@@ -116,11 +133,21 @@ export function useVehicleLayer(params: {
           fromLon = v.lon;
           fromBearing = v.bearing;
         }
+        // If the bearing change this tick is huge (~terminus turnaround,
+        // 180° flip), stretch the bearing transition over 2× TICK_MS so
+        // the visible rotation is a slower swing instead of an instant
+        // whip. Inline the wrap-aware delta (matches interpBearing).
+        let bdiff = v.bearing - fromBearing;
+        if (bdiff > 180) bdiff -= 360;
+        else if (bdiff < -180) bdiff += 360;
+        const endTs = now + TICK_MS;
+        const bearingEndTs = Math.abs(bdiff) > 150 ? now + 2 * TICK_MS : endTs;
         animRef.current.set(v.tripId, {
           fromLat, fromLon, fromBearing,
           toLat: v.lat, toLon: v.lon, toBearing: v.bearing,
           startTs: now,
-          endTs: now + TICK_MS,
+          endTs,
+          bearingEndTs,
           frozen: !!v.atStopId,
         });
         routeByTrip.set(v.tripId, v.routeId);
@@ -156,6 +183,9 @@ export function useVehicleLayer(params: {
           routeByTrip.delete(id);
           offsetByTrip.delete(id);
         }
+      }
+      } finally {
+        tickInFlight = false;
       }
     }
 

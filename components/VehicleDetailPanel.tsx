@@ -10,6 +10,7 @@ export function VehicleDetailPanel() {
   const { state, dispatch } = useApp();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const tickRef = useRef<NodeJS.Timeout | null>(null);
+  const missedRef = useRef(0);
   // Tick once a second so tripProgress recomputes against current time —
   // otherwise the "X% du trajet" line would freeze for 8 s between polls.
   const [nowTick, setNowTick] = useState(0);
@@ -25,12 +26,22 @@ export function VehicleDetailPanel() {
       return;
     }
     let cancel = false;
+    missedRef.current = 0;
     const load = async () => {
       const res = await fetch(`/api/vehicles/${state.selectedRouteId}`);
       const data = await res.json();
       if (cancel) return;
       const v = data.vehicles?.find((x: Vehicle) => x.tripId === state.selectedVehicleTripId);
-      if (v) setVehicle(v); else setVehicle(null);
+      if (v) {
+        missedRef.current = 0;
+        setVehicle(v);
+      } else {
+        missedRef.current += 1;
+        setVehicle(null);
+        if (missedRef.current >= 2) {
+          dispatch({ type: "SELECT_VEHICLE", tripId: null });
+        }
+      }
     };
     load();
     tickRef.current = setInterval(load, 8_000);
@@ -38,7 +49,7 @@ export function VehicleDetailPanel() {
       cancel = true;
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [state.selectedVehicleTripId, state.selectedRouteId]);
+  }, [state.selectedVehicleTripId, state.selectedRouteId, dispatch]);
 
   if (!state.selectedVehicleTripId || !vehicle) return null;
   const route = state.routes.find((r) => r.id === vehicle.routeId);

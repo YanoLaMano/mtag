@@ -52,13 +52,19 @@ export function useSelectedStopsLayer(params: {
               "circle-pitch-alignment": "map",
             },
           });
+          // Register interaction handlers exactly once per source lifetime.
+          // Previously these lived outside the guard and re-attached on every
+          // route switch, causing SELECT_STOP to fire N times after N switches.
+          const onStopClick = (e: any) => {
+            const f = e.features?.[0];
+            if (f) dispatch({ type: "SELECT_STOP", id: (f.properties as any).id });
+          };
+          const onStopEnter = () => { map.getCanvas().style.cursor = "pointer"; };
+          const onStopLeave = () => { map.getCanvas().style.cursor = ""; };
+          map.on("click", srcId, onStopClick);
+          map.on("mouseenter", srcId, onStopEnter);
+          map.on("mouseleave", srcId, onStopLeave);
         }
-        map.on("click", srcId, (e) => {
-          const f = e.features?.[0];
-          if (f) dispatch({ type: "SELECT_STOP", id: (f.properties as any).id });
-        });
-        map.on("mouseenter", srcId, () => (map.getCanvas().style.cursor = "pointer"));
-        map.on("mouseleave", srcId, () => (map.getCanvas().style.cursor = ""));
       });
   }, [ready, state.selectedRouteId, state.routes, state.theme, dispatch, mapRef]);
 }

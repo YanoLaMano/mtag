@@ -6,11 +6,6 @@ export const metadata: Metadata = {
   title: "M temps réel — Tram & Bus Grenoble",
   description:
     "Carte temps réel des lignes tram et bus du réseau M (TAG) sur la métropole grenobloise.",
-  icons: {
-    icon: [{ url: "/favicon.ico" }],
-    shortcut: ["/favicon.ico"],
-    apple: [{ url: "/favicon.ico" }],
-  },
   manifest: "/manifest.webmanifest",
 };
 

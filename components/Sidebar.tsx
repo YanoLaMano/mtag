@@ -73,9 +73,13 @@ function Header() {
         className="absolute -top-12 -right-12 w-32 h-32 rounded-full opacity-20 blur-2xl pointer-events-none"
         style={{ background: "radial-gradient(circle, hsl(var(--accent)) 0%, transparent 70%)" }}
       />
-      <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-accent to-accent-2 text-accent-fg flex items-center justify-center font-display font-extrabold text-2xl shadow-glow">
-        M
-      </div>
+      <img
+        src="/icon-192.png"
+        alt="M réso"
+        width={44}
+        height={44}
+        className="relative w-11 h-11 shrink-0 drop-shadow-[0_4px_10px_rgba(0,0,0,0.18)]"
+      />
       <div className="flex-1 min-w-0 relative">
         <h1 className="text-title text-fg leading-tight">M temps réel</h1>
         <p className="text-caption mt-0.5">Tram & bus · Métropole grenobloise</p>

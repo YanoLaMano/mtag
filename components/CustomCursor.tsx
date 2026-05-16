@@ -41,11 +41,28 @@ export function CustomCursor() {
     const interactiveSel = "a,button,input,select,textarea,[role=button],[data-cursor-magnet]";
     const onOver = (e: PointerEvent) => {
       const t = e.target as Element;
+      // Zones tagged data-cursor-off (e.g. the route list sidebar) restore the
+      // native OS cursor — the active ring scaling was distracting over dense
+      // hover targets like the line list.
+      const off = t?.closest?.("[data-cursor-off]");
+      if (off) {
+        ringRef.current?.classList.add("cursor-hidden");
+        dotRef.current?.classList.add("cursor-hidden");
+        return;
+      }
+      ringRef.current?.classList.remove("cursor-hidden");
+      dotRef.current?.classList.remove("cursor-hidden");
       const inter = t?.closest?.(interactiveSel);
       ringRef.current?.classList.toggle("cursor-active", !!inter);
     };
-    const onLeave = () => ringRef.current?.classList.add("cursor-hidden");
-    const onEnter = () => ringRef.current?.classList.remove("cursor-hidden");
+    const onLeave = () => {
+      ringRef.current?.classList.add("cursor-hidden");
+      dotRef.current?.classList.add("cursor-hidden");
+    };
+    const onEnter = () => {
+      ringRef.current?.classList.remove("cursor-hidden");
+      dotRef.current?.classList.remove("cursor-hidden");
+    };
 
     window.addEventListener("pointermove", onMove, { passive: true });
     document.addEventListener("pointerover", onOver, { passive: true });
@@ -68,6 +85,10 @@ export function CustomCursor() {
       <style>{`
         body { cursor: none; }
         a, button, input, select, textarea, [role=button] { cursor: none; }
+        /* Zones opted out of the custom cursor restore the native pointer. */
+        [data-cursor-off], [data-cursor-off] * { cursor: revert !important; }
+        [data-cursor-off] button, [data-cursor-off] a, [data-cursor-off] [role=button] { cursor: pointer !important; }
+        [data-cursor-off] input, [data-cursor-off] textarea { cursor: text !important; }
         .m-cursor-ring {
           position: fixed;
           top: 0; left: 0;
@@ -98,7 +119,8 @@ export function CustomCursor() {
         }
         .m-cursor-ring.cursor-active ~ .m-cursor-dot,
         .m-cursor-ring.cursor-active { /* slight lag */ }
-        .m-cursor-ring.cursor-hidden { opacity: 0; }
+        .m-cursor-ring.cursor-hidden,
+        .m-cursor-dot.cursor-hidden { opacity: 0; }
       `}</style>
     </>
   );

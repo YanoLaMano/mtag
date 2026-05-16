@@ -56,7 +56,7 @@ export function Sidebar() {
   if (state.selectedRouteId) return <RouteDetail />;
 
   return (
-    <aside className="absolute left-4 top-4 bottom-4 z-20 w-[420px] max-w-[calc(100vw-32px)] flex flex-col gap-3 animate-fade-up">
+    <aside data-cursor-off className="absolute left-4 top-4 bottom-4 z-20 w-[420px] max-w-[calc(100vw-32px)] flex flex-col gap-3 animate-fade-up">
       <Header />
       <Filters />
       <FavStopsSection />
@@ -78,7 +78,7 @@ function Header() {
         alt="M réso"
         width={44}
         height={44}
-        className="relative w-11 h-11 shrink-0 drop-shadow-[0_4px_10px_rgba(0,0,0,0.18)]"
+        className="relative w-11 h-11 shrink-0 rounded-full"
       />
       <div className="flex-1 min-w-0 relative">
         <h1 className="text-title text-fg leading-tight">M temps réel</h1>
@@ -365,7 +365,7 @@ function RouteDetailInner() {
 
 function RouteDetail() {
   return (
-    <aside className="absolute left-4 top-4 bottom-4 z-20 w-[420px] max-w-[calc(100vw-32px)] flex flex-col gap-3 animate-fade-up">
+    <aside data-cursor-off className="absolute left-4 top-4 bottom-4 z-20 w-[420px] max-w-[calc(100vw-32px)] flex flex-col gap-3 animate-fade-up">
       <RouteDetailInner />
     </aside>
   );

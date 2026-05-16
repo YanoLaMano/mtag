@@ -19,6 +19,19 @@ function distM(lat1: number, lon1: number, lat2: number, lon2: number): number {
 // somewhere else" — animating across the gap would draw a wormhole.
 const TELEPORT_THRESHOLD_M = 400;
 
+/**
+ * Per-route stable offset in screen pixels, in {-3..+3}. MUST match
+ * useRouteLineLayer's `routeOffsetPx` exactly — that's the hash that
+ * decides where the line is drawn relative to the street centerline,
+ * and the vehicle marker has to land on that same offset line to look
+ * "attached" to its own route.
+ */
+function routeOffsetPx(routeId: string): number {
+  let h = 0;
+  for (let i = 0; i < routeId.length; i++) h = (h * 31 + routeId.charCodeAt(i)) | 0;
+  return (Math.abs(h) % 7) - 3;
+}
+
 export function useVehicleLayer(params: {
   mapRef: RefObject<MLMap | null>;
   state: AppState;
@@ -107,6 +120,7 @@ export function useVehicleLayer(params: {
           endTs: now + TICK_MS,
           frozen: !!v.atStopId,
         });
+        routeByTrip.set(v.tripId, v.routeId);
 
         if (!existing) {
           const root = document.createElement("div");
@@ -136,9 +150,25 @@ export function useVehicleLayer(params: {
           m.remove();
           markersRef.current.delete(id);
           animRef.current.delete(id);
+          routeByTrip.delete(id);
+          offsetByTrip.delete(id);
         }
       }
     }
+
+    // Cache per-trip route offset so we don't hash on every frame.
+    const offsetByTrip = new Map<string, number>();
+    function getOffsetForTrip(tripId: string, routeId: string): number {
+      let o = offsetByTrip.get(tripId);
+      if (o === undefined) {
+        o = routeOffsetPx(routeId);
+        offsetByTrip.set(tripId, o);
+      }
+      return o;
+    }
+    // Stores routeId for each anim entry — needed to compute the perpendicular
+    // offset in the rAF loop without dropping the per-vehicle Route lookup.
+    const routeByTrip = new Map<string, string>();
 
     let lastFollow = 0;
     function loop() {
@@ -149,9 +179,27 @@ export function useVehicleLayer(params: {
         if (!m) continue;
         const lat = interpLat(anim, t);
         const lon = interpLon(anim, t);
-        m.setLngLat([lon, lat]);
-        if (state.followVehicle && id === state.selectedVehicleTripId) {
-          followLat = lat; followLon = lon;
+        const bearing = interpBearing(anim, t);
+        const routeId = routeByTrip.get(id);
+        // Apply the same per-route hash offset that the route line uses,
+        // perpendicular to the vehicle's direction of motion, in screen
+        // pixels (so the marker stays glued to the line at every zoom).
+        // bearing is compass degrees (0=N, 90=E); the perpendicular-right
+        // unit vector in screen space (y down) is (cos(β), sin(β)).
+        const off = routeId ? getOffsetForTrip(id, routeId) : 0;
+        if (off !== 0 && map) {
+          const br = (bearing * Math.PI) / 180;
+          const p = map.project([lon, lat]);
+          const ll = map.unproject([p.x + off * Math.cos(br), p.y + off * Math.sin(br)]);
+          m.setLngLat([ll.lng, ll.lat]);
+          if (state.followVehicle && id === state.selectedVehicleTripId) {
+            followLat = ll.lat; followLon = ll.lng;
+          }
+        } else {
+          m.setLngLat([lon, lat]);
+          if (state.followVehicle && id === state.selectedVehicleTripId) {
+            followLat = lat; followLon = lon;
+          }
         }
       }
       // Throttle follow-recentre to once every 600ms (smooth without fighting MapLibre)

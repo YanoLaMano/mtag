@@ -169,8 +169,12 @@ function DelayBadge({ delay }: { delay: number }) {
 }
 
 function FreshnessDot({ lastUpdate, loading }: { lastUpdate: number | null; loading: boolean }) {
-  const [now, setNow] = useState(Date.now());
+  // Init to 0 so the SSR snapshot is deterministic — the useEffect ticks it
+  // to Date.now() on mount. (The component returns null while !lastUpdate
+  // anyway, so this is defense-in-depth, not a fix for a live bug.)
+  const [now, setNow] = useState(0);
   useEffect(() => {
+    setNow(Date.now());
     const iv = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(iv);
   }, []);

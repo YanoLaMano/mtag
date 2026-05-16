@@ -28,8 +28,14 @@ export function IsochroneControl() {
       setPicking(false);
       map.getCanvas().style.cursor = "";
     };
-    map.once("click", onClick);
-    return () => { map.getCanvas().style.cursor = ""; };
+    // Use .on (not .once) + explicit .off in cleanup. With .once the listener
+    // stays registered if the user cancels picking without clicking the map,
+    // and fires on the next unrelated click — silently setting a wrong origin.
+    map.on("click", onClick);
+    return () => {
+      map.off("click", onClick);
+      map.getCanvas().style.cursor = "";
+    };
   }, [picking]);
 
   // recompute when origin/max change

@@ -119,7 +119,10 @@ function TripStopRow({
   isLast: boolean;
   now: number;
 }) {
-  const sec = (stop.realtime ? stop.arrive : stop.arrive) - now;
+  // stop.arrive is already RT-resolved upstream (interpolate.ts uses
+  // realtimeArrival ?? scheduledArrival), so a stop.realtime ternary here
+  // was selecting between identical values.
+  const sec = stop.arrive - now;
   const future = sec >= -30;
   const isImminent = stop.isNext;
   return (

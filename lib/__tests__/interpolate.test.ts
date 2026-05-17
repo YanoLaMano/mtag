@@ -253,14 +253,16 @@ describe("buildVehicles — polyline snapping", () => {
 });
 
 describe("buildVehicles — RT coherence and per-stop realtime flag", () => {
-  it("discards scheduled-only events when any trip event has realtime=true", () => {
+  it("keeps mixed RT and scheduled events so the polyline stays connected", () => {
+    // Mixed-RT trip: A (RT) prev, B (scheduled-only) intermediate stop the
+    // vehicle is currently passing, C (RT) next. Previously the RT-coherence
+    // filter dropped B entirely, leaving the segment A→C and the missing-stop
+    // invisible. New behavior: keep all events, preserve `realtime` per stop.
     const stops = [
       makeStop("A", 45.180, 5.720),
       makeStop("B", 45.190, 5.720),
       makeStop("C", 45.200, 5.720),
     ];
-    // A is RT (prev), B is scheduled-only (should be filtered out),
-    // C is RT (next). Without filtering, B at NOW would be picked as "next".
     const times = [
       makeStopTime("trip1", "A", NOW - 30, NOW - 20, true),
       makeStopTime("trip1", "B", NOW + 5, NOW + 10, false),
@@ -268,11 +270,35 @@ describe("buildVehicles — RT coherence and per-stop realtime flag", () => {
     ];
     const v = buildVehicles(makeRoute(), stops, groupByStop(...times), NOW);
     expect(v).toHaveLength(1);
-    // After RT filter: prev=A, next=C → mid-trip between A and C
-    expect(v[0].nextStopId).toBe("C");
+    // All 3 stops surface in tripStops, middle one keeps realtime=false.
+    expect(v[0].tripStops).toHaveLength(3);
+    const byId = Object.fromEntries(v[0].tripStops!.map((s) => [s.stopId, s]));
+    expect(byId.A.realtime).toBe(true);
+    expect(byId.B.realtime).toBe(false);
+    expect(byId.C.realtime).toBe(true);
+    // Classification now sees B as next (arrive > now), not C.
     expect(v[0].prevStopId).toBe("A");
-    expect(v[0].tripStops).toHaveLength(2);
-    expect(v[0].tripStops!.map((s) => s.stopId)).toEqual(["A", "C"]);
+    expect(v[0].nextStopId).toBe("B");
+  });
+
+  it("classifies night-service events correctly across midnight", () => {
+    // Trip operates from 23:58:20 (86300) to 00:05:10 next day (86710).
+    // It's now 00:01 (nowSec = 60). cmpNow should shift to 86460 so prev=first,
+    // next=second, with the vehicle mid-segment.
+    const stops = [
+      makeStop("N1", 45.180, 5.720),
+      makeStop("N2", 45.200, 5.720),
+    ];
+    const times = [
+      makeStopTime("nightTrip", "N1", 86300, 86310, true),
+      makeStopTime("nightTrip", "N2", 86700, 86710, true),
+    ];
+    const v = buildVehicles(makeRoute(), stops, groupByStop(...times), 60);
+    expect(v).toHaveLength(1);
+    expect(v[0].prevStopId).toBe("N1");
+    expect(v[0].nextStopId).toBe("N2");
+    // span = 86700 - 86310 = 390; elapsed = 86460 - 86310 = 150 → progress ≈ 0.385
+    expect(v[0].progress).toBeCloseTo(150 / 390, 5);
   });
 
   it("preserves per-stop realtime flag from the source events (not hardcoded)", () => {

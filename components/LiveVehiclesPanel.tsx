@@ -2,15 +2,17 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/lib/store";
 import type { Vehicle } from "@/lib/types";
+import { useVehiclesForRoute } from "@/lib/vehicles-store";
 import { cn, formatRelativeTime, nowSecondsSinceMidnight, tripProgress } from "@/lib/utils";
 import { Bus, ChevronRight, Clock, MapPin, Radio, TrainFront } from "lucide-react";
 import { LinePill } from "./LinePill";
 
 export function LiveVehiclesPanel() {
   const { state } = useApp();
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const { vehicles, lastUpdate } = useVehiclesForRoute(state.selectedRouteId);
+  // "loading" is now derived: we're loading the first time a route is
+  // selected but no snapshot has arrived yet.
+  const loading = !!state.selectedRouteId && lastUpdate == null;
   // Tick once a second so the live-progress derivation re-renders.
   const [nowSec, setNowSec] = useState(0);
   useEffect(() => {
@@ -18,27 +20,6 @@ export function LiveVehiclesPanel() {
     const iv = setInterval(() => setNowSec(nowSecondsSinceMidnight()), 1000);
     return () => clearInterval(iv);
   }, []);
-
-  useEffect(() => {
-    if (!state.selectedRouteId) { setVehicles([]); return; }
-    let cancel = false;
-    setLoading(true);
-    const load = async () => {
-      try {
-        const res = await fetch(`/api/vehicles/${state.selectedRouteId}`);
-        const data = await res.json();
-        if (!cancel) {
-          setVehicles(data.vehicles || []);
-          setLastUpdate(Date.now());
-        }
-      } catch {} finally {
-        if (!cancel) setLoading(false);
-      }
-    };
-    load();
-    const iv = setInterval(load, 12_000);
-    return () => { cancel = true; clearInterval(iv); };
-  }, [state.selectedRouteId]);
 
   const route = state.routes.find((r) => r.id === state.selectedRouteId);
   if (!route || !state.selectedRouteId) return null;

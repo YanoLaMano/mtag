@@ -8,7 +8,15 @@ export function Splash() {
   const [hide, setHide] = useState(false);
 
   useEffect(() => {
-    // Animation ~1.4s, fade out then unmount
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Animation ~1.4s, fade out then unmount. Reduced motion: skip entirely.
+    if (reduceMotion) {
+      setVisible(false);
+      return;
+    }
     const t1 = setTimeout(() => setHide(true), 1400);
     const t2 = setTimeout(() => setVisible(false), 1900);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -19,7 +27,7 @@ export function Splash() {
   return (
     <div
       aria-hidden
-      className={`fixed inset-0 z-[200] flex flex-col items-center justify-center bg-bg transition-opacity duration-500 ${hide ? "opacity-0" : "opacity-100"}`}
+      className={`fixed inset-0 z-[200] flex flex-col items-center justify-center bg-bg transition-opacity duration-500 ${hide ? "opacity-0 pointer-events-none" : "opacity-100"}`}
     >
       <svg width="120" height="120" viewBox="0 0 120 120" className="splash-logo">
         <defs>

@@ -14,6 +14,16 @@ export function DisruptionsBanner() {
   const { state, dispatch } = useApp();
   const [data, setData] = useState<Disruptions | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener?.("change", sync);
+    return () => mq.removeEventListener?.("change", sync);
+  }, []);
 
   useEffect(() => {
     let cancel = false;
@@ -30,7 +40,12 @@ export function DisruptionsBanner() {
   const byShort = new Map(state.routes.map((r) => [r.shortName, r]));
 
   return (
-    <div className="absolute top-4 left-[calc(420px+32px)] right-[420px] z-30 mx-auto max-w-[640px] animate-fade-down">
+    <div className={cn(
+      "absolute z-30 animate-fade-down",
+      isMobile
+        ? "top-2 left-4 right-4"
+        : "top-4 left-[calc(420px+32px)] right-[420px] mx-auto max-w-[640px]",
+    )}>
       <div className="glass-strong border-warning/40 rounded-2xl px-4 py-2.5 flex items-center gap-3 bg-warning-soft/40">
         <AlertTriangle size={16} className="text-warning shrink-0" />
         <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">

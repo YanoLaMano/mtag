@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, RefObject } from "react";
+import { useEffect, useMemo, useRef, RefObject } from "react";
 import maplibregl, { Map as MLMap } from "maplibre-gl";
 import type { Vehicle, Route } from "@/lib/types";
 import { readableOn } from "@/lib/utils";
+import { useVehiclesForRoutes } from "@/lib/vehicles-store";
 import { Anim, interpLat, interpLon, interpBearing } from "./anim";
 import type { AppState, AppDispatch } from "./types";
 
@@ -44,164 +45,160 @@ export function useVehicleLayer(params: {
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   // Per-vehicle animation state: from/to coords & timestamps for interpolation
   const animRef = useRef<Map<string, Anim>>(new Map());
+  // Stores routeId for each anim entry — needed to compute the perpendicular
+  // offset in the rAF loop without dropping the per-vehicle Route lookup.
+  const routeByTripRef = useRef<Map<string, string>>(new Map());
+  // Cache per-trip route offset so we don't hash on every frame.
+  const offsetByTripRef = useRef<Map<string, number>>(new Map());
   const rafRef = useRef<number | null>(null);
 
+  // Compute the route set we want to follow. Memoized so the array identity
+  // stays stable between renders that don't change the selection — otherwise
+  // useVehiclesForRoutes would resubscribe constantly.
+  const targetRouteIds = useMemo<string[]>(() => {
+    if (!state.showVehicles) return [];
+    const targets: Route[] = state.selectedRouteId
+      ? state.routes.filter((r) => r.id === state.selectedRouteId)
+      : state.routes.filter((r) => {
+          if (state.modeFilter === "TRAM") return r.mode === "TRAM";
+          if (state.modeFilter === "BUS") return r.mode === "BUS";
+          return true; // ALL
+        });
+    return targets.map((r) => r.id);
+  }, [state.showVehicles, state.selectedRouteId, state.routes, state.modeFilter]);
+
+  // Single source of truth: the central store. One fetch per route id per
+  // 8 s, shared across every consumer in the tree.
+  const { all, lastUpdate } = useVehiclesForRoutes(targetRouteIds);
+
+  // React to each new snapshot — refresh markers/anims/occupied stops.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !state.showVehicles) return;
+    if (lastUpdate == null) return; // nothing fetched yet
+
+    // Poll cadence the animation easing was tuned against; keeping the same
+    // constant means interpBearing/interpLat reach `to` exactly when the next
+    // snapshot lands.
+    const TICK_MS = 8_000;
+
+    // Update "occupied stops" GeoJSON: stops currently hosting a vehicle
+    const occupiedFeatures: any[] = [];
+    const seenStops = new Set<string>();
+    for (const v of all) {
+      if (!v.atStopId || seenStops.has(`${v.atStopId}|${v.routeId}`)) continue;
+      seenStops.add(`${v.atStopId}|${v.routeId}`);
+      occupiedFeatures.push({
+        type: "Feature",
+        properties: { stopId: v.atStopId, color: v.color, line: v.shortName },
+        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+      });
+    }
+    const occSrc = map.getSource("occupied-stops") as any;
+    if (occSrc?.setData) {
+      occSrc.setData({ type: "FeatureCollection", features: occupiedFeatures });
+    }
+
+    const now = performance.now();
+    const seen = new Set<string>();
+    for (const v of all) {
+      seen.add(v.tripId);
+      const existing = markersRef.current.get(v.tripId);
+      const prevAnim = animRef.current.get(v.tripId);
+      let fromLat = prevAnim ? interpLat(prevAnim, now) : v.lat;
+      let fromLon = prevAnim ? interpLon(prevAnim, now) : v.lon;
+      let fromBearing = prevAnim ? interpBearing(prevAnim, now) : v.bearing;
+      // Teleport rejection: if upstream jumps the trip more than ~400 m
+      // between two ticks (impossible at any realistic transit speed over
+      // 12 s), snap the marker — animating would draw a wormhole through
+      // unrelated streets and confuse the user. The vehicle simply
+      // reappears at the new position with no easing.
+      if (prevAnim && distM(fromLat, fromLon, v.lat, v.lon) > TELEPORT_THRESHOLD_M) {
+        fromLat = v.lat;
+        fromLon = v.lon;
+        fromBearing = v.bearing;
+      }
+      // If the bearing change this tick is huge (~terminus turnaround,
+      // 180° flip), stretch the bearing transition over 2× TICK_MS so
+      // the visible rotation is a slower swing instead of an instant
+      // whip. Inline the wrap-aware delta (matches interpBearing).
+      let bdiff = v.bearing - fromBearing;
+      if (bdiff > 180) bdiff -= 360;
+      else if (bdiff < -180) bdiff += 360;
+      const endTs = now + TICK_MS;
+      const bearingEndTs = Math.abs(bdiff) > 150 ? now + 2 * TICK_MS : endTs;
+      animRef.current.set(v.tripId, {
+        fromLat, fromLon, fromBearing,
+        toLat: v.lat, toLon: v.lon, toBearing: v.bearing,
+        startTs: now,
+        endTs,
+        bearingEndTs,
+        frozen: !!v.atStopId,
+      });
+      routeByTripRef.current.set(v.tripId, v.routeId);
+
+      if (!existing) {
+        const root = document.createElement("div");
+        root.className = "m-vehicle";
+        root.style.cssText = "transform-origin:center;will-change:transform;cursor:pointer;";
+        const fg = readableOn(v.color);
+        root.innerHTML = `
+          <div class="vehicle-pulse" style="color:${v.color}">
+            <div data-pill style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:${v.color};color:${fg};font:700 11px/1 var(--font-sans);box-shadow:0 4px 10px rgba(0,0,0,.18),0 0 0 2px #fff;transition:transform 120ms ease-out;">
+              ${v.shortName}
+            </div>
+          </div>`;
+        root.addEventListener("click", (e) => {
+          e.stopPropagation();
+          dispatch({ type: "SELECT_ROUTE", id: v.routeId });
+          dispatch({ type: "SELECT_VEHICLE", tripId: v.tripId });
+        });
+        const m = new maplibregl.Marker({ element: root, anchor: "center" })
+          .setLngLat([fromLon, fromLat])
+          .addTo(map);
+        markersRef.current.set(v.tripId, m);
+      }
+    }
+    // Remove stale
+    for (const [id, m] of markersRef.current) {
+      if (!seen.has(id)) {
+        m.remove();
+        markersRef.current.delete(id);
+        animRef.current.delete(id);
+        routeByTripRef.current.delete(id);
+        offsetByTripRef.current.delete(id);
+      }
+    }
+    // We intentionally depend on `lastUpdate` (changes every poll) rather than
+    // `all` (a fresh array every render even when contents are unchanged) —
+    // the store mints a new snapshot only when a poll completes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastUpdate, ready, state.showVehicles]);
+
+  // Animation rAF + teardown. Runs as long as the layer is enabled; reads
+  // refs for current anim state so it doesn't restart per tick.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !state.showVehicles) {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current.clear();
       animRef.current.clear();
+      routeByTripRef.current.clear();
+      offsetByTripRef.current.clear();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
 
-    // Poll at 8 s to match the upstream stoptimes cache (revalidate=8) and
-    // the SSE tick — keeps the marker chasing a fresh server prediction
-    // instead of extrapolating from a 12-second-old sample.
-    const TICK_MS = 8_000;
     let stopped = false;
-    // In-flight guard: on a slow network the N-fan-out Promise.allSettled
-    // can take longer than TICK_MS. If we let the next interval fire we
-    // get out-of-order writes into animRef — an older response overwrites
-    // the newer one and the marker visibly jumps backward. Skip the entire
-    // tick when one is still running; the next interval (8 s later) picks
-    // it up.
-    let tickInFlight = false;
-    // Generation counter — guards against any stale tick that somehow
-    // finishes after a fresh one (e.g. the in-flight flag was cleared
-    // between scheduling and execution). Mygen captured at start; if it
-    // doesn't match `gen` after the await, we discard the results.
-    let gen = 0;
 
-    async function tick() {
-      if (tickInFlight) return;
-      tickInFlight = true;
-      const mygen = ++gen;
-      try {
-      // Visible routes following the current filter
-      const targets: Route[] = state.selectedRouteId
-        ? state.routes.filter((r) => r.id === state.selectedRouteId)
-        : state.routes.filter((r) => {
-            if (state.modeFilter === "TRAM") return r.mode === "TRAM";
-            if (state.modeFilter === "BUS") return r.mode === "BUS";
-            return true; // ALL
-          });
-
-      const all: Vehicle[] = [];
-      const results = await Promise.allSettled(
-        targets.map((r) => fetch(`/api/vehicles/${r.id}`).then((x) => x.json()))
-      );
-      if (mygen !== gen) return;
-      for (const r of results) {
-        if (r.status === "fulfilled" && r.value?.vehicles) all.push(...r.value.vehicles);
-      }
-
-      // Update "occupied stops" GeoJSON: stops currently hosting a vehicle
-      const occupiedFeatures: any[] = [];
-      const seenStops = new Set<string>();
-      for (const v of all) {
-        if (!v.atStopId || seenStops.has(`${v.atStopId}|${v.routeId}`)) continue;
-        seenStops.add(`${v.atStopId}|${v.routeId}`);
-        occupiedFeatures.push({
-          type: "Feature",
-          properties: { stopId: v.atStopId, color: v.color, line: v.shortName },
-          geometry: { type: "Point", coordinates: [v.lon, v.lat] },
-        });
-      }
-      const occSrc = map!.getSource("occupied-stops") as any;
-      if (occSrc?.setData) {
-        occSrc.setData({ type: "FeatureCollection", features: occupiedFeatures });
-      }
-
-      const now = performance.now();
-      const seen = new Set<string>();
-      for (const v of all) {
-        seen.add(v.tripId);
-        const existing = markersRef.current.get(v.tripId);
-        const prevAnim = animRef.current.get(v.tripId);
-        let fromLat = prevAnim ? interpLat(prevAnim, now) : v.lat;
-        let fromLon = prevAnim ? interpLon(prevAnim, now) : v.lon;
-        let fromBearing = prevAnim ? interpBearing(prevAnim, now) : v.bearing;
-        // Teleport rejection: if upstream jumps the trip more than ~400 m
-        // between two ticks (impossible at any realistic transit speed over
-        // 12 s), snap the marker — animating would draw a wormhole through
-        // unrelated streets and confuse the user. The vehicle simply
-        // reappears at the new position with no easing.
-        if (prevAnim && distM(fromLat, fromLon, v.lat, v.lon) > TELEPORT_THRESHOLD_M) {
-          fromLat = v.lat;
-          fromLon = v.lon;
-          fromBearing = v.bearing;
-        }
-        // If the bearing change this tick is huge (~terminus turnaround,
-        // 180° flip), stretch the bearing transition over 2× TICK_MS so
-        // the visible rotation is a slower swing instead of an instant
-        // whip. Inline the wrap-aware delta (matches interpBearing).
-        let bdiff = v.bearing - fromBearing;
-        if (bdiff > 180) bdiff -= 360;
-        else if (bdiff < -180) bdiff += 360;
-        const endTs = now + TICK_MS;
-        const bearingEndTs = Math.abs(bdiff) > 150 ? now + 2 * TICK_MS : endTs;
-        animRef.current.set(v.tripId, {
-          fromLat, fromLon, fromBearing,
-          toLat: v.lat, toLon: v.lon, toBearing: v.bearing,
-          startTs: now,
-          endTs,
-          bearingEndTs,
-          frozen: !!v.atStopId,
-        });
-        routeByTrip.set(v.tripId, v.routeId);
-
-        if (!existing) {
-          const root = document.createElement("div");
-          root.className = "m-vehicle";
-          root.style.cssText = "transform-origin:center;will-change:transform;cursor:pointer;";
-          const fg = readableOn(v.color);
-          root.innerHTML = `
-            <div class="vehicle-pulse" style="color:${v.color}">
-              <div data-pill style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:${v.color};color:${fg};font:700 11px/1 var(--font-sans);box-shadow:0 4px 10px rgba(0,0,0,.18),0 0 0 2px #fff;transition:transform 120ms ease-out;">
-                ${v.shortName}
-              </div>
-            </div>`;
-          root.addEventListener("click", (e) => {
-            e.stopPropagation();
-            dispatch({ type: "SELECT_ROUTE", id: v.routeId });
-            dispatch({ type: "SELECT_VEHICLE", tripId: v.tripId });
-          });
-          const m = new maplibregl.Marker({ element: root, anchor: "center" })
-            .setLngLat([fromLon, fromLat])
-            .addTo(map!);
-          markersRef.current.set(v.tripId, m);
-        }
-      }
-      // Remove stale
-      for (const [id, m] of markersRef.current) {
-        if (!seen.has(id)) {
-          m.remove();
-          markersRef.current.delete(id);
-          animRef.current.delete(id);
-          routeByTrip.delete(id);
-          offsetByTrip.delete(id);
-        }
-      }
-      } finally {
-        tickInFlight = false;
-      }
-    }
-
-    // Cache per-trip route offset so we don't hash on every frame.
-    const offsetByTrip = new Map<string, number>();
     function getOffsetForTrip(tripId: string, routeId: string): number {
-      let o = offsetByTrip.get(tripId);
+      let o = offsetByTripRef.current.get(tripId);
       if (o === undefined) {
         o = routeOffsetPx(routeId);
-        offsetByTrip.set(tripId, o);
+        offsetByTripRef.current.set(tripId, o);
       }
       return o;
     }
-    // Stores routeId for each anim entry — needed to compute the perpendicular
-    // offset in the rAF loop without dropping the per-vehicle Route lookup.
-    const routeByTrip = new Map<string, string>();
 
     let lastFollow = 0;
     function loop() {
@@ -213,7 +210,7 @@ export function useVehicleLayer(params: {
         const lat = interpLat(anim, t);
         const lon = interpLon(anim, t);
         const bearing = interpBearing(anim, t);
-        const routeId = routeByTrip.get(id);
+        const routeId = routeByTripRef.current.get(id);
         // Apply the same per-route hash offset that the route line uses,
         // perpendicular to the vehicle's direction of motion, in screen
         // pixels (so the marker stays glued to the line at every zoom).
@@ -243,17 +240,13 @@ export function useVehicleLayer(params: {
       if (!stopped) rafRef.current = requestAnimationFrame(loop);
     }
 
-    tick();
-    const iv = setInterval(() => { if (!stopped) tick(); }, TICK_MS);
     rafRef.current = requestAnimationFrame(loop);
     return () => {
       stopped = true;
-      clearInterval(iv);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-    // Preserve original deps exactly (1:1 behavior) — followVehicle and
-    // selectedVehicleTripId are intentionally read from the closure of the
-    // raf loop without re-subscribing.
+    // followVehicle/selectedVehicleTripId are intentionally read from the
+    // closure of the raf loop without re-subscribing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, state.selectedRouteId, state.routes, state.modeFilter, state.showVehicles]);
+  }, [ready, state.showVehicles]);
 }

@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import { useApp } from "@/lib/store";
-import type { Vehicle } from "@/lib/types";
+import { useVehiclesForRoutes } from "@/lib/vehicles-store";
 
 /**
  * Listens to vehicles of currently visible routes, detects when one ARRIVES
@@ -16,38 +16,35 @@ export function FavStopArrivalParticles() {
   const { state } = useApp();
   const seenRef = useRef<Set<string>>(new Set()); // tripId+stopId already animated
 
-  useEffect(() => {
-    if (state.favStops.length === 0) return;
-    let cancelled = false;
-
+  // Same target heuristic as the old code: when a route is selected, watch
+  // only that one; otherwise watch every tram line. No-op when no favorites.
+  const targetIds = useMemo<string[]>(() => {
+    if (state.favStops.length === 0) return [];
     const targets = state.selectedRouteId
       ? state.routes.filter((r) => r.id === state.selectedRouteId)
       : state.routes.filter((r) => r.mode === "TRAM");
+    return targets.map((r) => r.id);
+  }, [state.favStops.length, state.routes, state.selectedRouteId]);
 
-    async function tick() {
-      const results = await Promise.allSettled(
-        targets.map((r) => fetch(`/api/vehicles/${r.id}`).then((x) => x.json()))
-      );
-      const all: Vehicle[] = [];
-      for (const r of results) {
-        if (r.status === "fulfilled" && r.value?.vehicles) all.push(...r.value.vehicles);
-      }
-      // For each vehicle currently "at" a favorite stop, fire a particle burst
-      for (const v of all) {
-        if (!v.atStopId || !state.favStops.includes(v.atStopId)) continue;
-        const key = `${v.tripId}|${v.atStopId}`;
-        if (seenRef.current.has(key)) continue;
-        seenRef.current.add(key);
-        // Prune set when too big
-        if (seenRef.current.size > 200) seenRef.current = new Set(Array.from(seenRef.current).slice(-100));
+  const { all, lastUpdate } = useVehiclesForRoutes(targetIds);
 
-        if (!cancelled) emitBurst(v.lon, v.lat, v.color);
+  useEffect(() => {
+    if (lastUpdate == null || state.favStops.length === 0) return;
+    for (const v of all) {
+      if (!v.atStopId || !state.favStops.includes(v.atStopId)) continue;
+      const key = `${v.tripId}|${v.atStopId}`;
+      if (seenRef.current.has(key)) continue;
+      seenRef.current.add(key);
+      // Prune set when too big
+      if (seenRef.current.size > 200) {
+        seenRef.current = new Set(Array.from(seenRef.current).slice(-100));
       }
+      emitBurst(v.lon, v.lat, v.color);
     }
-    tick();
-    const iv = setInterval(tick, 12_000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [state.favStops, state.routes, state.selectedRouteId]);
+    // Run once per snapshot; `all` array identity changes every render so we
+    // key on lastUpdate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastUpdate]);
 
   return null;
 }

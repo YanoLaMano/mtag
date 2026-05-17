@@ -1,15 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/store";
 import { Activity, TrainFront, Bus, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVehiclesForRoutes } from "@/lib/vehicles-store";
 import { AnimatedNumber } from "./AnimatedNumber";
 
 export function StatusBar() {
   const { state } = useApp();
-  const [tramCount, setTramCount] = useState<number | null>(null);
-  const [busCount, setBusCount] = useState<number | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [online, setOnline] = useState(true);
 
   useEffect(() => {
@@ -21,33 +19,28 @@ export function StatusBar() {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
-  useEffect(() => {
-    if (state.routes.length === 0) return;
-    let cancel = false;
-    const refresh = async () => {
-      // Sample a few high-frequency lines for global counter
-      const trams = state.routes.filter((r) => r.mode === "TRAM");
-      const sampleBuses = state.routes.filter((r) => r.mode === "BUS" && r.type === "CHRONO").slice(0, 6);
-      const targets = [...trams, ...sampleBuses];
-      const results = await Promise.allSettled(
-        targets.map((r) => fetch(`/api/vehicles/${r.id}`).then((x) => x.json()))
-      );
-      let t = 0, b = 0;
-      for (const [i, res] of results.entries()) {
-        if (res.status !== "fulfilled" || !res.value?.vehicles) continue;
-        const n = res.value.vehicles.length;
-        if (targets[i].mode === "TRAM") t += n; else b += n;
-      }
-      if (!cancel) {
-        setTramCount(t);
-        setBusCount(b);
-        setLastUpdate(Date.now());
-      }
-    };
-    refresh();
-    const iv = setInterval(refresh, 30_000);
-    return () => { cancel = true; clearInterval(iv); };
+  // Same sampling as before: every tram + the first 6 CHRONO buses.
+  const targets = useMemo(() => {
+    const trams = state.routes.filter((r) => r.mode === "TRAM");
+    const sampleBuses = state.routes.filter((r) => r.mode === "BUS" && r.type === "CHRONO").slice(0, 6);
+    return [...trams, ...sampleBuses];
   }, [state.routes]);
+  const targetIds = useMemo(() => targets.map((r) => r.id), [targets]);
+  const { byRoute, lastUpdate } = useVehiclesForRoutes(targetIds);
+
+  let tramCount: number | null = null;
+  let busCount: number | null = null;
+  if (lastUpdate != null) {
+    let t = 0, b = 0;
+    for (const r of targets) {
+      const snap = byRoute[r.id];
+      if (!snap || snap.lastUpdate == null) continue;
+      const n = snap.vehicles.length;
+      if (r.mode === "TRAM") t += n; else b += n;
+    }
+    tramCount = t;
+    busCount = b;
+  }
 
   const [age, setAge] = useState(0);
   useEffect(() => {

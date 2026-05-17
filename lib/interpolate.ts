@@ -255,12 +255,25 @@ export function buildVehicles(
   for (const [tripId, rawEvents] of byTrip) {
     rawEvents.sort((a, b) => a.arrive - b.arrive);
 
-    // #9 Coherence: if ANY event of this trip has realtime telemetry,
-    // discard the scheduled-only events — they cause prev/next jumps
-    // because their numbers come from a different source than the RT ones.
-    const hasRT = rawEvents.some((e) => e.realtime);
-    const events = hasRT ? rawEvents.filter((e) => e.realtime) : rawEvents;
+    // Keep both RT and scheduled events so the polyline stays connected through
+    // missing-RT segments. The per-event `realtime` flag is preserved and used
+    // downstream to color/style tripStops. Previously we filtered to RT-only
+    // when any event was RT, but that silently dropped intermediate stops with
+    // mixed RT availability — the vehicle would slide through the gap and the
+    // missing stop disappeared from tripStops. Geographic continuity wins over
+    // RT coherence here; wildly-lying RT is rare while missing-stop is visible.
+    const events = rawEvents;
     if (events.length === 0) continue;
+
+    // Service-day cross-midnight handling. GTFS event seconds may exceed 86400
+    // for trips that operate past midnight; `nowSec` is calendar seconds in
+    // [0, 86399]. If this trip has any event > 86400 and we're in the early
+    // hours of the day, shift `nowSec` forward by 86400 for classification so
+    // comparisons stay monotonic across the midnight boundary.
+    const maxEventS = events.reduce((m, e) => Math.max(m, e.depart, e.arrive), 0);
+    const crossesMidnight = maxEventS > 86400;
+    const SERVICE_DAY_PIVOT_S = 6 * 3600; // GTFS convention: service days roll over around 03:00–06:00
+    const cmpNow = (crossesMidnight && nowSec < SERVICE_DAY_PIVOT_S) ? nowSec + 86400 : nowSec;
 
     // Classify events relative to now. The dwell window is padded so the
     // vehicle visibly stops at every arrêt even when upstream reports
@@ -269,17 +282,17 @@ export function buildVehicles(
     let next: Event | null = null;
     let dwellingAt: Event | null = null;
     for (const e of events) {
-      if (e.arrive - DWELL_PAD_BEFORE_S <= nowSec && nowSec <= e.depart + DWELL_PAD_AFTER_S) {
+      if (e.arrive - DWELL_PAD_BEFORE_S <= cmpNow && cmpNow <= e.depart + DWELL_PAD_AFTER_S) {
         dwellingAt = e;
-      } else if (e.depart < nowSec) {
+      } else if (e.depart < cmpNow) {
         prev = e;
-      } else if (e.arrive > nowSec && !next) {
+      } else if (e.arrive > cmpNow && !next) {
         next = e;
       }
     }
 
     // #8 Drop trips that ended more than TRIP_ENDED_GRACE seconds ago.
-    if (!next && !dwellingAt && prev && nowSec - prev.depart > TRIP_ENDED_GRACE) continue;
+    if (!next && !dwellingAt && prev && cmpNow - prev.depart > TRIP_ENDED_GRACE) continue;
 
     // Pick the polyline for the whole trip once. Used for BOTH dwell (so the
     // vehicle pins to the projection of the stop on the line — i.e. exactly
@@ -308,7 +321,7 @@ export function buildVehicles(
       // (or raw stop coords if no polyline).
       const s = stopById.get(dwellingAt.stopId);
       if (!s) continue;
-      if (nowSec - dwellingAt.arrive > DWELL_FREEZE_MAX) continue;
+      if (cmpNow - dwellingAt.arrive > DWELL_FREEZE_MAX) continue;
       const onLine = onLineProjection(s);
       if (onLine) {
         lat = onLine.lat;
@@ -325,7 +338,7 @@ export function buildVehicles(
       const b = stopById.get(next.stopId);
       if (!a || !b) continue;
       const span = Math.max(1, next.arrive - prev.depart);
-      progress = Math.min(1, Math.max(0, (nowSec - prev.depart) / span));
+      progress = Math.min(1, Math.max(0, (cmpNow - prev.depart) / span));
       // Trapezoidal speed profile: a real tram accelerates ~3-5 s after
       // leaving a stop, cruises, then brakes ~3-5 s before the next one.
       // Linear progress shows constant speed all the way through; a piecewise
@@ -407,7 +420,7 @@ export function buildVehicles(
         arrive: e.arrive,
         depart: e.depart,
         realtime: e.realtime,
-        passed: e.depart <= nowSec && !isAtStop,
+        passed: e.depart <= cmpNow && !isAtStop,
         isAtStop: isAtStop || undefined,
         isNext: isNext || undefined,
       } : null;

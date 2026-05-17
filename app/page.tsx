@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { AppProvider } from "@/lib/store";
 import { ToastProvider } from "@/lib/toast";
+import { VehiclesProvider } from "@/lib/vehicles-store";
 import { Sidebar } from "@/components/Sidebar";
 import { StopPanel } from "@/components/StopPanel";
 import { TopBar } from "@/components/TopBar";
@@ -40,6 +41,7 @@ export default function Page() {
   return (
     <AppProvider>
       <ToastProvider>
+        <VehiclesProvider>
         <Splash />
         <CustomCursor />
         <main className="fixed inset-0 bg-bg overflow-hidden">
@@ -67,6 +69,7 @@ export default function Page() {
           <UrlSync />
           <ServiceWorkerRegistrar />
         </main>
+        </VehiclesProvider>
       </ToastProvider>
     </AppProvider>
   );

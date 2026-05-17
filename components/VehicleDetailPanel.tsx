@@ -2,15 +2,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/store";
 import type { Vehicle, VehicleTripStop } from "@/lib/types";
+import { useVehiclesForRoute } from "@/lib/vehicles-store";
 import { cn, formatRelativeTime, nowSecondsSinceMidnight, tripProgress } from "@/lib/utils";
 import { LinePill } from "./LinePill";
 import { Crosshair, X, MapPin } from "lucide-react";
 
 export function VehicleDetailPanel() {
   const { state, dispatch } = useApp();
-  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
-  const tickRef = useRef<NodeJS.Timeout | null>(null);
+  const { vehicles, lastUpdate } = useVehiclesForRoute(state.selectedRouteId);
   const missedRef = useRef(0);
+  // Reset miss counter when the user picks a new vehicle/route.
+  useEffect(() => {
+    missedRef.current = 0;
+  }, [state.selectedVehicleTripId, state.selectedRouteId]);
   // Tick once a second so tripProgress recomputes against current time —
   // otherwise the "X% du trajet" line would freeze for 8 s between polls.
   const [nowTick, setNowTick] = useState(0);
@@ -20,36 +24,30 @@ export function VehicleDetailPanel() {
     return () => clearInterval(iv);
   }, []);
 
+  // Find the selected trip in the current snapshot. lastUpdate moves on every
+  // poll → this re-evaluates and drives the missed-poll auto-deselect.
+  const vehicle: Vehicle | null = useMemo(() => {
+    if (!state.selectedVehicleTripId) return null;
+    return vehicles.find((x) => x.tripId === state.selectedVehicleTripId) ?? null;
+  }, [vehicles, state.selectedVehicleTripId]);
+
+  // Drive the "trip disappeared from the snapshot 2× in a row → deselect"
+  // logic against snapshot generations, not raw fetches. We key on lastUpdate
+  // so we count once per poll, not once per render.
+  const lastSeenUpdateRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!state.selectedVehicleTripId || !state.selectedRouteId) {
-      setVehicle(null);
-      return;
-    }
-    let cancel = false;
-    missedRef.current = 0;
-    const load = async () => {
-      const res = await fetch(`/api/vehicles/${state.selectedRouteId}`);
-      const data = await res.json();
-      if (cancel) return;
-      const v = data.vehicles?.find((x: Vehicle) => x.tripId === state.selectedVehicleTripId);
-      if (v) {
-        missedRef.current = 0;
-        setVehicle(v);
-      } else {
-        missedRef.current += 1;
-        setVehicle(null);
-        if (missedRef.current >= 2) {
-          dispatch({ type: "SELECT_VEHICLE", tripId: null });
-        }
+    if (!state.selectedVehicleTripId || !state.selectedRouteId) return;
+    if (lastUpdate == null || lastUpdate === lastSeenUpdateRef.current) return;
+    lastSeenUpdateRef.current = lastUpdate;
+    if (vehicle) {
+      missedRef.current = 0;
+    } else {
+      missedRef.current += 1;
+      if (missedRef.current >= 2) {
+        dispatch({ type: "SELECT_VEHICLE", tripId: null });
       }
-    };
-    load();
-    tickRef.current = setInterval(load, 8_000);
-    return () => {
-      cancel = true;
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [state.selectedVehicleTripId, state.selectedRouteId, dispatch]);
+    }
+  }, [lastUpdate, vehicle, state.selectedVehicleTripId, state.selectedRouteId, dispatch]);
 
   if (!state.selectedVehicleTripId || !vehicle) return null;
   const route = state.routes.find((r) => r.id === vehicle.routeId);

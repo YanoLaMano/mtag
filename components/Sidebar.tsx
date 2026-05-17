@@ -77,9 +77,9 @@ function Header() {
       <img
         src="/icon-192.png"
         alt="M réso"
-        width={44}
-        height={44}
-        className="relative w-11 h-11 shrink-0 rounded-full"
+        width={56}
+        height={56}
+        className="relative w-14 h-14 shrink-0 rounded-full"
       />
       <div className="flex-1 min-w-0 relative">
         <h1 className="text-title text-fg leading-tight">M temps réel</h1>

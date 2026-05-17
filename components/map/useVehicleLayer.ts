@@ -50,6 +50,11 @@ export function useVehicleLayer(params: {
   const routeByTripRef = useRef<Map<string, string>>(new Map());
   // Cache per-trip route offset so we don't hash on every frame.
   const offsetByTripRef = useRef<Map<string, number>>(new Map());
+  // Direct refs into the marker DOM so we can rotate the arrow each rAF
+  // frame and flip the data-dwelling / data-selected attributes without
+  // re-rendering the whole marker.
+  const rotatorByTripRef = useRef<Map<string, HTMLElement>>(new Map());
+  const wrapByTripRef = useRef<Map<string, HTMLElement>>(new Map());
   const rafRef = useRef<number | null>(null);
 
   // Compute the route set we want to follow. Memoized so the array identity
@@ -139,14 +144,16 @@ export function useVehicleLayer(params: {
 
       if (!existing) {
         const root = document.createElement("div");
-        root.className = "m-vehicle";
-        root.style.cssText = "transform-origin:center;will-change:transform;cursor:pointer;";
         const fg = readableOn(v.color);
+        // The wrap inherits the route color so the arrow + halo can use
+        // currentColor; the pill overrides with its own background+text.
         root.innerHTML = `
-          <div class="vehicle-pulse" style="color:${v.color}">
-            <div data-pill style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:${v.color};color:${fg};font:700 11px/1 var(--font-sans);box-shadow:0 4px 10px rgba(0,0,0,.18),0 0 0 2px #fff;transition:transform 120ms ease-out;">
-              ${v.shortName}
+          <div class="m-vehicle-wrap" data-dwelling="${v.atStopId ? "true" : "false"}" style="color:${v.color}">
+            <div class="m-vehicle-arrow-rotator" data-arrow-rotator>
+              <div class="m-vehicle-arrow"></div>
             </div>
+            <div class="m-vehicle-halo" aria-hidden="true"></div>
+            <div class="m-vehicle-pill" style="background:${v.color};color:${fg}">${v.shortName}</div>
           </div>`;
         root.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -157,6 +164,15 @@ export function useVehicleLayer(params: {
           .setLngLat([fromLon, fromLat])
           .addTo(map);
         markersRef.current.set(v.tripId, m);
+        const wrap = root.querySelector(".m-vehicle-wrap") as HTMLElement | null;
+        const rot = root.querySelector("[data-arrow-rotator]") as HTMLElement | null;
+        if (wrap) wrapByTripRef.current.set(v.tripId, wrap);
+        if (rot) rotatorByTripRef.current.set(v.tripId, rot);
+      } else {
+        // Flip the dwelling attr on the existing marker so the CSS halo
+        // pulse turns on/off without rebuilding the DOM.
+        const wrap = wrapByTripRef.current.get(v.tripId);
+        if (wrap) wrap.dataset.dwelling = v.atStopId ? "true" : "false";
       }
     }
     // Remove stale
@@ -167,6 +183,8 @@ export function useVehicleLayer(params: {
         animRef.current.delete(id);
         routeByTripRef.current.delete(id);
         offsetByTripRef.current.delete(id);
+        rotatorByTripRef.current.delete(id);
+        wrapByTripRef.current.delete(id);
       }
     }
     // We intentionally depend on `lastUpdate` (changes every poll) rather than
@@ -185,6 +203,8 @@ export function useVehicleLayer(params: {
       animRef.current.clear();
       routeByTripRef.current.clear();
       offsetByTripRef.current.clear();
+      rotatorByTripRef.current.clear();
+      wrapByTripRef.current.clear();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
@@ -210,6 +230,12 @@ export function useVehicleLayer(params: {
         const lat = interpLat(anim, t);
         const lon = interpLon(anim, t);
         const bearing = interpBearing(anim, t);
+        // Rotate the arrow chevron to match direction of motion. The
+        // wrapping rotator's transform-origin is the pill center so the
+        // pill itself stays upright (text readable) — only the chevron
+        // orbits around it.
+        const rot = rotatorByTripRef.current.get(id);
+        if (rot) rot.style.transform = `rotate(${bearing}deg)`;
         const routeId = routeByTripRef.current.get(id);
         // Apply the same per-route hash offset that the route line uses,
         // perpendicular to the vehicle's direction of motion, in screen
@@ -236,6 +262,13 @@ export function useVehicleLayer(params: {
       if (followLat !== null && followLon !== null && t - lastFollow > 600) {
         lastFollow = t;
         map!.easeTo({ center: [followLon, followLat], duration: 600, essential: true });
+      }
+      // Reflect the followed-vehicle selection in the DOM so the CSS
+      // ring outlines the currently selected marker. Runs every frame
+      // but only writes when the attribute changes — cheap.
+      for (const [id, wrap] of wrapByTripRef.current) {
+        const want = state.followVehicle && id === state.selectedVehicleTripId ? "true" : "false";
+        if (wrap.dataset.selected !== want) wrap.dataset.selected = want;
       }
       if (!stopped) rafRef.current = requestAnimationFrame(loop);
     }

@@ -228,4 +228,29 @@ export function useStopLayer(params: {
       })
       .catch(() => { /* graceful */ });
   }, [ready, state.theme, dispatch, mapRef]);
+
+  // Hide the all-stops layers while a single route is focused — the
+  // selected-stops layer already renders that route's arrêts with the
+  // halo/ring/dot/label stack, so showing the generic network stops on
+  // top of them just doubles every dot. Restore on deselect.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const layers = [
+      "all-stops-clusters",
+      "all-stops-clusters-count",
+      "all-stops-glow",
+      "all-stops-halo",
+      "all-stops",
+      "all-stops-label",
+      // Heatmap intentionally left alone — it's a separate visualization
+      // toggled by the user via useHeatmapVisibility.
+    ];
+    const visible = !state.selectedRouteId;
+    for (const id of layers) {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+      }
+    }
+  }, [ready, state.selectedRouteId, mapRef]);
 }

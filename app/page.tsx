@@ -21,10 +21,6 @@ import { ReplayBar } from "@/components/ReplayBar";
 import { IsochroneControl } from "@/components/IsochroneControl";
 import MapView from "@/components/Map";
 
-const CustomCursor = dynamic(
-  () => import("@/components/CustomCursor").then((m) => m.CustomCursor),
-  { ssr: false, loading: () => null }
-);
 const KonamiEasterEgg = dynamic(
   () => import("@/components/KonamiEasterEgg").then((m) => m.KonamiEasterEgg),
   { ssr: false, loading: () => null }
@@ -43,7 +39,6 @@ export default function Page() {
       <ToastProvider>
         <VehiclesProvider>
         <Splash />
-        <CustomCursor />
         <main className="fixed inset-0 bg-bg overflow-hidden">
           {mounted ? (
             <MapView />

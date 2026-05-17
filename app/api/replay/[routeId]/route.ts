@@ -19,19 +19,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ routeId:
   let snap;
   try {
     snap = await fetchVehiclesSnapshot(routeId);
-  } catch {
-    return NextResponse.json({ error: "invalid routeId" }, { status: 400 });
+  } catch (e) {
+    if ((e as Error)?.message === "Invalid routeId") {
+      return NextResponse.json({ error: "invalid routeId" }, { status: 400 });
+    }
+    throw e; // Let Next handle as 500
   }
   if (!snap) return NextResponse.json({ error: "Unknown route" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
-  const sec = parseInt(searchParams.get("at") ?? "0", 10);
+  const rawAt = parseInt(searchParams.get("at") ?? "0", 10);
+  const at = Number.isFinite(rawAt) ? Math.max(0, Math.min(172799, rawAt)) : 0;
 
   const patternsByStop = await fetchVehiclePatterns(routeId, snap.stops, 60);
-  const vehicles = buildVehicles(snap.route, snap.stops, patternsByStop, sec, snap.geometry);
+  const vehicles = buildVehicles(snap.route, snap.stops, patternsByStop, at, snap.geometry);
 
   return NextResponse.json(
-    { vehicles, at: sec, ts: Date.now() },
+    { vehicles, at, ts: Date.now() },
     { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } }
   );
 }

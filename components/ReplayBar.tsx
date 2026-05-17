@@ -4,7 +4,7 @@ import { useApp } from "@/lib/store";
 import { Play, Pause, Rewind, FastForward, X, History } from "lucide-react";
 import type { Vehicle } from "@/lib/types";
 import maplibregl from "maplibre-gl";
-import { cn, readableOn } from "@/lib/utils";
+import { cn, readableOn, nowSecondsSinceMidnight } from "@/lib/utils";
 
 /**
  * Time-travel scrubber: lets the user replay vehicle positions for the selected
@@ -14,7 +14,7 @@ export function ReplayBar() {
   const { state } = useApp();
   const [open, setOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [sec, setSec] = useState(() => nowSec());
+  const [sec, setSec] = useState(() => nowSecondsSinceMidnight());
   const [speed, setSpeed] = useState(60); // 1 minute of replay per real second
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
@@ -31,7 +31,8 @@ export function ReplayBar() {
     const iv = setInterval(() => {
       setSec((s) => {
         const next = s + speed / 4; // 4 ticks per second for smoothness
-        return next > nowSec() ? nowSec() : next;
+        const n = nowSecondsSinceMidnight();
+        return next > n ? n : next;
       });
     }, 250);
     return () => clearInterval(iv);
@@ -107,7 +108,7 @@ export function ReplayBar() {
     );
   }
 
-  const now = nowSec();
+  const now = nowSecondsSinceMidnight();
   const start = Math.max(0, now - 3600 * 3); // 3 h back max
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-16 z-30 w-[min(640px,calc(100vw-32px))] animate-fade-up">
@@ -181,10 +182,6 @@ export function ReplayBar() {
   );
 }
 
-function nowSec() {
-  const d = new Date();
-  return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
-}
 function formatHHMM(s: number) {
   s = Math.max(0, Math.round(s));
   const h = Math.floor(s / 3600);

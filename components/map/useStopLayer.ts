@@ -1,7 +1,16 @@
 "use client";
-import { useEffect, RefObject } from "react";
+import { useEffect, useRef, RefObject } from "react";
 import { Map as MLMap } from "maplibre-gl";
 import type { AppState, AppDispatch } from "./types";
+
+const ALL_STOPS_LAYERS = [
+  "all-stops-clusters",
+  "all-stops-clusters-count",
+  "all-stops-glow",
+  "all-stops-halo",
+  "all-stops",
+  "all-stops-label",
+];
 
 export function useStopLayer(params: {
   mapRef: RefObject<MLMap | null>;
@@ -10,6 +19,12 @@ export function useStopLayer(params: {
   ready: boolean;
 }) {
   const { mapRef, state, dispatch, ready } = params;
+  // Latest selection — kept in a ref so the async fetch.then() below can
+  // read the *current* value (closure capture would lock it to the value
+  // at effect-mount time and the all-stops layers would slip through
+  // visible when the user selects a route mid-fetch).
+  const selRouteRef = useRef<string | null>(null);
+  selRouteRef.current = state.selectedRouteId;
   // Load ALL stops of the network (once)
   useEffect(() => {
     const map = mapRef.current;
@@ -224,6 +239,20 @@ export function useStopLayer(params: {
           });
           map.on("mouseenter", `${srcId}-clusters`, () => (map.getCanvas().style.cursor = "pointer"));
           map.on("mouseleave", `${srcId}-clusters`, () => (map.getCanvas().style.cursor = ""));
+
+          // Apply current selection visibility right after layers exist.
+          // Closes the race where the user selects a route while the
+          // initial fetch is still in flight: the toggle effect below
+          // ran with no layers to toggle, the layers landed visible, and
+          // both layer stacks rendered every stop twice.
+          const hide = !!selRouteRef.current;
+          if (hide) {
+            for (const id of ALL_STOPS_LAYERS) {
+              if (map.getLayer(id)) {
+                map.setLayoutProperty(id, "visibility", "none");
+              }
+            }
+          }
         }
       })
       .catch(() => { /* graceful */ });
@@ -236,18 +265,10 @@ export function useStopLayer(params: {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const layers = [
-      "all-stops-clusters",
-      "all-stops-clusters-count",
-      "all-stops-glow",
-      "all-stops-halo",
-      "all-stops",
-      "all-stops-label",
-      // Heatmap intentionally left alone — it's a separate visualization
-      // toggled by the user via useHeatmapVisibility.
-    ];
+    // Heatmap intentionally left alone — it's a separate visualization
+    // toggled by the user via useHeatmapVisibility.
     const visible = !state.selectedRouteId;
-    for (const id of layers) {
+    for (const id of ALL_STOPS_LAYERS) {
       if (map.getLayer(id)) {
         map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
       }

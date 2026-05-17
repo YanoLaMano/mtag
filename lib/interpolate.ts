@@ -442,6 +442,11 @@ export function buildVehicles(
       delay,
       progress,
       tripStops,
+      // Best estimate of the trip's full stop count — upstream stoptimes
+      // only return forward-looking entries, so tripStops.length alone
+      // collapses to 0 % at trip start. The route's unique-stop count is
+      // close enough (over-counts for variant branches, never under).
+      tripStopsCount: stops.length,
     });
   }
 

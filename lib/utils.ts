@@ -30,27 +30,38 @@ export function formatRelativeTime(secondsFromNow: number): string {
 }
 
 /**
- * Trip-wide progress in [0, 1] — fraction of *stops reached* over the total
- * trip. Step-wise: the value changes only when the vehicle crosses an arrêt,
- * not continuously between stops. With N stops the bar advances by exactly
- * 1/N each time a stop is reached, so "5/12 stops done" reads as 41.7 %
- * and stays there until the 6th stop is reached.
+ * Trip-wide progress in [0, 1] — fraction of the *whole trip* the vehicle
+ * has covered, from origin terminus to arrival terminus. Step-wise: the
+ * bar advances by exactly 1/N each time a stop is crossed, where N is the
+ * trip's full stop count.
  *
- * Reached = stops the vehicle is past (passed=true) plus the stop it is
- * currently dwelling at (isAtStop=true). interpolate.ts sets `passed` only
- * when `!isAtStop`, so the dwelled stop is counted here exactly once.
+ * Why we don't just count `passed` flags: the upstream `/stoptimes`
+ * endpoint only returns *remaining* stops of the trip, never the ones the
+ * vehicle has already departed. So `v.tripStops` is always forward-looking
+ * and `passed` is always false — naive `reached/total` would peg every
+ * vehicle at 0 % until it dwells at one stop, then jump to 1/N. Hence
+ * `tripStopsCount` (server-set to the route's full stop count) gives a
+ * fixed denominator, and we compute completed = total − remaining.
  *
- * The `nowSec` argument is kept for API stability (callers pass it from
- * their 1 Hz ticker) but is no longer consulted — recompute happens via
- * the server poll, which is exactly when the `passed`/`isAtStop` flags
- * actually transition.
+ * Includes the live segment fraction (`v.progress`) so the value advances
+ * smoothly within the current segment instead of stepping by exactly
+ * 1/N only at each crossing.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function tripProgress(v: Vehicle, _nowSec: number): number {
   if (!v.tripStops || v.tripStops.length === 0) return v.progress;
-  const total = v.tripStops.length;
-  const reached = v.tripStops.filter((s) => s.passed || s.isAtStop).length;
-  return Math.min(1, reached / total);
+  const remaining = v.tripStops.length;
+  const total = v.tripStopsCount && v.tripStopsCount >= remaining
+    ? v.tripStopsCount
+    : remaining;
+  // Stops already departed (best estimate). +1 when dwelling because the
+  // current dwell stop should count as "reached" the moment we pull in.
+  const dwelling = v.tripStops.some((s) => s.isAtStop);
+  const completed = Math.max(0, total - remaining) + (dwelling ? 1 : 0);
+  // Live segment fraction smooths motion between two stop crossings.
+  // Only when actually moving (server `progress` is 0 during dwell).
+  const seg = dwelling ? 0 : Math.max(0, Math.min(1, v.progress ?? 0));
+  return Math.min(1, (completed + seg) / total);
 }
 
 /**

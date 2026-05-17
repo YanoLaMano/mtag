@@ -91,4 +91,13 @@ export interface Vehicle {
   delay: number;
   progress: number;
   tripStops?: VehicleTripStop[];
+  /**
+   * Estimated total number of stops on the trip's full pattern. The
+   * upstream stoptimes endpoint only returns the *remaining* stops, so
+   * tripStops.length never tells us how far the vehicle has already come.
+   * We approximate the full trip length with the route's unique stop count
+   * (route.stops.length) — over-counts when the route has variant branches
+   * but stays inside the right order of magnitude.
+   */
+  tripStopsCount?: number;
 }

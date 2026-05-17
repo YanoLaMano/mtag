@@ -30,35 +30,27 @@ export function formatRelativeTime(secondsFromNow: number): string {
 }
 
 /**
- * Trip-wide progress in [0, 1] — fraction of the *whole journey* the vehicle
- * has covered, from its starting terminus to its arrival terminus. Computed
- * by stop count: (passedStops + currentSegmentProgress) / totalStops. The
- * server's `vehicle.progress` is local to the current segment (0→1 between
- * each consecutive pair of stops) which oscillates and reads weirdly when
- * shown as "% du trajet" — this version is monotonic.
+ * Trip-wide progress in [0, 1] — fraction of *stops reached* over the total
+ * trip. Step-wise: the value changes only when the vehicle crosses an arrêt,
+ * not continuously between stops. With N stops the bar advances by exactly
+ * 1/N each time a stop is reached, so "5/12 stops done" reads as 41.7 %
+ * and stays there until the 6th stop is reached.
  *
- * Pass current Paris seconds-since-midnight; the segment portion ticks live
- * even between server polls.
+ * Reached = stops the vehicle is past (passed=true) plus the stop it is
+ * currently dwelling at (isAtStop=true). interpolate.ts sets `passed` only
+ * when `!isAtStop`, so the dwelled stop is counted here exactly once.
+ *
+ * The `nowSec` argument is kept for API stability (callers pass it from
+ * their 1 Hz ticker) but is no longer consulted — recompute happens via
+ * the server poll, which is exactly when the `passed`/`isAtStop` flags
+ * actually transition.
  */
-export function tripProgress(v: Vehicle, nowSec: number): number {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function tripProgress(v: Vehicle, _nowSec: number): number {
   if (!v.tripStops || v.tripStops.length === 0) return v.progress;
   const total = v.tripStops.length;
-  // Reached = stops the vehicle is past (passed=true) plus the stop it's
-  // currently dwelling at (isAtStop=true). interpolate.ts sets passed only
-  // when !isAtStop, so the dwelled stop is counted here exactly once.
   const reached = v.tripStops.filter((s) => s.passed || s.isAtStop).length;
-  // While dwelling, no extra segment progress — pin to the stop count.
-  if (v.tripStops.some((s) => s.isAtStop)) return reached / total;
-  // Between stops: add the live segment fraction so the bar advances each
-  // second instead of stepping by 1/total every couple of minutes.
-  if (!v.prevStopId || !v.nextStopId) return reached / total;
-  const prev = v.tripStops.find((s) => s.stopId === v.prevStopId);
-  const next = v.tripStops.find((s) => s.stopId === v.nextStopId);
-  if (!prev || !next) return reached / total;
-  const span = next.arrive - prev.depart;
-  if (span <= 0) return reached / total;
-  const seg = Math.max(0, Math.min(1, (nowSec - prev.depart) / span));
-  return Math.min(1, (reached + seg) / total);
+  return Math.min(1, reached / total);
 }
 
 /**
